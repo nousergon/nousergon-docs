@@ -30,23 +30,23 @@ The substrate is equities; the pattern is general. The orchestration, measuremen
 
 | Phase | Focus | Status |
 |---|---|---|
-| **Phase 1** | Build the system end-to-end | ✅ Complete — 6 repos, full pipeline running |
-| **Phase 2** | Reliability + measurement buildout | 🟡 **Current** — incident retros, SF hardening, observability, autonomous feedback loop |
-| **Phase 3** | Parameter tuning toward alpha | ⏳ Next — backtester→config feedback loop already wired |
-| **Phase 4** | Live capital | ⏳ Gated on Phase 3 sustained outperformance |
+| **Phase 1** | Build the system end-to-end | ✅ Complete — 6 modules, 7 public repos, full pipeline running |
+| **Phase 2** | Reliability + measurability buildout | 🟡 **Current** — pipeline reliability, every decision point measurable, autonomous feedback loop |
+| **Phase 3** | Parameter tuning toward alpha | ⏳ Next — operates on the substrate Phase 2 is making trustworthy |
+| **Phase 4** | Live capital | ⏳ Gated on sustained Phase 3 outperformance |
 
-The presentation layer leads with reliability and measurement, not returns. Long-term alpha — portfolio return minus SPY, risk-adjusted — is the metric Phase 3 is engineered to inflect.
+Per-phase key objectives, the Phase 2 → 3 transparency-inventory gate, and Phase 3 → 4 alpha gating live on the [nousergon.ai home page](https://nousergon.ai) (canonical source). Forward-looking work tracking lives in [ROADMAP.md](ROADMAP.md).
 
 ## Modules
 
-| Module | Repo | Today | Where it's headed |
-|---|---|---|---|
-| **Data** | [`alpha-engine-data`](https://github.com/cipher813/alpha-engine-data) | ~50 features × ~900 tickers × 10y in ArcticDB; weekly refresh | Broader alternative-data, options-derived, and sentiment coverage; drift-monitored per feature group; sub-daily refresh where signal warrants it |
-| **Research** | [`alpha-engine-research`](https://github.com/cipher813/alpha-engine-research) | 6 sector teams + CIO + macro economist; weekly scan; rubric-based LLM-as-judge on key stages | Higher-cadence research (toward daily); broader judge rubric coverage with two-tier orchestration; conviction-driven mid-week rebalancing |
-| **Predictor** | [`alpha-engine-predictor`](https://github.com/cipher813/alpha-engine-predictor) | Layer-1 LightGBM momentum + LightGBM volatility + research-score calibrator → Layer-2 Ridge meta-learner; 21 features in production inference | Research-score calibrator promoted from lookup table to a GBM; regime model returns as a real model once it clears its named baseline; broader feature breadth in inference toward the ~50-feature store universe |
-| **Executor** | [`alpha-engine`](https://github.com/cipher813/alpha-engine) | Risk-gated paper trading via IB Gateway; 4 entry-trigger types; ATR trailing stops | Live capital (Phase 4); portfolio-level risk overlays beyond per-position gates; tax-aware position management |
-| **Backtester** | [`alpha-engine-backtester`](https://github.com/cipher813/alpha-engine-backtester) | Weekly evaluator + autonomous optimizers writing 4 configs to S3 (scoring weights, executor params, predictor veto, research params) | Deeper attribution showing which signal sources actually drive returns; regime-conditional config sets; more frequent retuning cadence as data accrues |
-| **Dashboard** | [`alpha-engine-dashboard`](https://github.com/cipher813/alpha-engine-dashboard) | Read-only Streamlit; portfolio, signals, predictor, retros — powers nousergon.ai (public) and dashboard.nousergon.ai (private, Cloudflare Access) | Signal lifecycle view; feedback-loop visualization; feature store + RAG inventory; `/metrics` validation page |
+| Module | Repo | Today |
+|---|---|---|
+| **Data** | [`alpha-engine-data`](https://github.com/cipher813/alpha-engine-data) | ~50 features × ~900 tickers × 10y in ArcticDB; weekly refresh + daily delta |
+| **Research** | [`alpha-engine-research`](https://github.com/cipher813/alpha-engine-research) | 6 sector teams + CIO + macro economist; weekly scan; rubric-based LLM-as-judge on key stages |
+| **Predictor** | [`alpha-engine-predictor`](https://github.com/cipher813/alpha-engine-predictor) | Layer-1 LightGBM momentum + LightGBM volatility + research-score calibrator → Layer-2 Ridge meta-learner; 21 features in production inference |
+| **Executor** | [`alpha-engine`](https://github.com/cipher813/alpha-engine) | Risk-gated paper trading via IB Gateway; 4 entry-trigger types; ATR trailing stops |
+| **Backtester** | [`alpha-engine-backtester`](https://github.com/cipher813/alpha-engine-backtester) | Weekly evaluator + autonomous optimizers writing 4 configs to S3 (scoring weights, executor params, predictor veto, research params) |
+| **Dashboard** | [`alpha-engine-dashboard`](https://github.com/cipher813/alpha-engine-dashboard) | Read-only Streamlit; powers nousergon.ai (public) and console.nousergon.ai (private, Cloudflare Access) |
 
 Plus two supporting repos: a public shared library [`alpha-engine-lib`](https://github.com/cipher813/alpha-engine-lib) (logging, freshness gates, trading-calendar arithmetic, ArcticDB helpers, agent decision capture, LLM cost tracking) used by all 6 modules, and a private [`alpha-engine-config`](https://github.com/cipher813/alpha-engine-config) repo holding proprietary scoring weights, agent prompts, model parameters, and other tuned values. Disclosure boundary: architecture and approach are public; specific weights, prompts, and thresholds are private.
 
@@ -61,7 +61,7 @@ flowchart LR
     Predictor[Predictor<br/>L1 momentum/vol GBMs + research calibrator<br/>+ L2 Ridge meta-learner]
     Executor[Executor<br/>risk-gated sizing + intraday daemon]
     Backtester[Backtester<br/>eval + parity + 4 config optimizers]
-    Dashboard[Dashboard<br/>nousergon.ai + dashboard.nousergon.ai]
+    Dashboard[Dashboard<br/>nousergon.ai + console.nousergon.ai]
 
     Data --> Research
     Data --> Predictor
