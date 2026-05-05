@@ -35,7 +35,7 @@ The substrate is equities; the pattern is general. The orchestration, measuremen
 | **Phase 3** | Parameter tuning toward alpha | ⏳ Next — operates on the substrate Phase 2 is making trustworthy |
 | **Phase 4** | Live capital | ⏳ Gated on sustained Phase 3 outperformance |
 
-Per-phase key objectives, Phase 2 → 3 transparency-inventory gate, and Phase 3 → 4 alpha gating live on the [nousergon.ai home page](https://nousergon.ai) (canonical source: [`branding/phase_trajectory.md`](branding/phase_trajectory.md)). Forward-looking work tracking lives in [ROADMAP.md](ROADMAP.md).
+Per-phase key objectives, the Phase 2 → 3 transparency-inventory gate, and Phase 3 → 4 alpha gating live on the [nousergon.ai home page](https://nousergon.ai) (canonical source). Forward-looking work tracking lives in [ROADMAP.md](ROADMAP.md).
 
 ## Modules
 
