@@ -47,16 +47,12 @@ jobs:
 
 ## What gets written
 
-As of the schema-discipline arc PR 2 (2026-05-01), this action
-**dual-writes** every deploy event:
+This action emits a single structured entry per deploy event to
+`changelog/entries/{YYYY-MM-DD}/{event_id}.json` (schema 1.0.0).
 
-1. **Structured corpus** (source-of-truth going forward): `changelog/entries/{YYYY-MM-DD}/{event_id}.json`
-2. **Legacy event-typed prefix** (still consumed by the daily aggregator): `changelog/deploys/{YYYY}/{MM}/{DD}T{HH-MM-SS}_{repo}_{sha7}.json`
-
-The dual-write window closes when the aggregator switches to reading
-`entries/` exclusively (PR 4 of the arc) per the CLAUDE.md S3 contract
-("write to BOTH old and new paths for at least 1 week before removing
-the old path").
+Legacy dual-write to `changelog/deploys/{YYYY}/{MM}/{DD}T...` retired
+2026-05-07 after the 1-week back-compat bake. Historical entries under
+`changelog/deploys/` remain in S3 for retroactive queries.
 
 ### Structured entry (schema 1.0.0, `changelog/entries/...`)
 
@@ -111,32 +107,6 @@ body lands in `description` (untruncated) so retro mining queries have
 the problem-statement + solution-rationale text to grep, not just the
 title.
 
-### Legacy entry (`changelog/deploys/...`)
-
-Verbatim of the pre-PR-2 schema — preserved for the back-compat window:
-
-```json
-{
-  "ts_utc": "2026-05-01T15:23:44Z",
-  "event_type": "deploy",
-  "repo": "cipher813/alpha-engine-data",
-  "branch": "main",
-  "sha": "febaccb...",
-  "sha7": "febaccb",
-  "pr_number": 119,
-  "pr_title": "feat(daily_append): producer-side universe-freshness scan + S3 receipt",
-  "pr_body": "...",
-  "pr_url": "https://github.com/cipher813/alpha-engine-data/pull/119",
-  "author": "cipher813",
-  "files_changed": 8,
-  "deploy_workflow": "deploy.yml",
-  "deploy_status": "success",
-  "event_name": "push",
-  "workflow_name": "Deploy",
-  "workflow_run_id": "1234567890"
-}
-```
-
 ## Event types + sibling sources
 
 The structured corpus uses the controlled-vocab `event_type` from
@@ -153,10 +123,10 @@ Other event types come from sibling tooling:
 | SNS-to-S3 mirror Lambda (alpha-engine-data) | `incident` | alpha-engine-alerts SNS subscriber |
 | `changelog-log` CLI    | any                  | operator manual annotations |
 
-The legacy event-typed sub-prefixes (`changelog/deploys/`,
+Historical legacy event-typed sub-prefixes (`changelog/deploys/`,
 `changelog/incidents/`, `changelog/manual/`, `changelog/recoveries/`)
-remain populated during the back-compat window for the aggregator to
-keep reading. Aggregator switches to `entries/` in PR 4 of the arc.
+remain in S3 for retroactive queries; new writes land at
+`changelog/entries/` only since 2026-05-07.
 
 ## Reading the materialized changelog
 

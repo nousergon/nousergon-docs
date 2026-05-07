@@ -12,16 +12,15 @@ description: 'Writes a deploy-event JSON to s3://alpha-engine-research/changelog
 # actual problem statement + solution rationale — the data Brian needs to
 # answer "what problems did we face and how did we solve them" months later.
 #
-# As of the schema-discipline arc PR 2 (2026-05-01 evening): action
-# DUAL-WRITES the entry. The structured-corpus path
-# (changelog/entries/{YYYY-MM-DD}/{event_id}.json) carries the new schema
-# (event_type=change, subsystem inferred from repo, resolution_type,
-# detected_at/resolved_at/verified_at timestamps, git_refs, auto_emitted=true)
-# and is the source-of-truth going forward. The legacy path
-# (changelog/deploys/...) keeps emitting per the CLAUDE.md S3 contract
-# ("write to BOTH old and new paths for at least 1 week before removing
-# the old path"). Aggregator switches to entries/-only in PR 4 of the arc;
-# legacy emits stop in PR 5.
+# As of the schema-discipline arc PR 2 (2026-05-01 evening): action emits
+# a structured entry to changelog/entries/{YYYY-MM-DD}/{event_id}.json
+# (schema 1.0.0: event_type=change, subsystem inferred from repo,
+# resolution_type, detected_at/resolved_at/verified_at timestamps,
+# git_refs, auto_emitted=true). Aggregator reads entries/ exclusively.
+#
+# Legacy dual-write to changelog/deploys/ retired 2026-05-07 after the
+# 1-week back-compat bake (per CLAUDE.md S3 contract). Historical
+# changelog/deploys/ objects remain in S3 for retroactive queries.
 #
 # Caller pattern:
 #   - uses: cipher813/alpha-engine-docs/.github/actions/append-changelog@main
@@ -54,10 +53,6 @@ inputs:
     description: 'Override S3 bucket. Default: alpha-engine-research.'
     required: false
     default: 'alpha-engine-research'
-  s3_prefix:
-    description: 'Override S3 key prefix for the LEGACY entry. Default: changelog/deploys. The structured entry always lands at changelog/entries/{YYYY-MM-DD}/{event_id}.json regardless of this value.'
-    required: false
-    default: 'changelog/deploys'
   structured_prefix:
     description: 'Override S3 key prefix for the structured entry. Default: changelog/entries.'
     required: false
@@ -88,7 +83,6 @@ runs:
         DEPLOY_STATUS: ${{ inputs.deploy_status }}
         DEPLOY_WORKFLOW: ${{ inputs.deploy_workflow }}
         S3_BUCKET: ${{ inputs.s3_bucket }}
-        S3_PREFIX: ${{ inputs.s3_prefix }}
         STRUCTURED_PREFIX: ${{ inputs.structured_prefix }}
         SUBSYSTEM_OVERRIDE: ${{ inputs.subsystem }}
         RESOLUTION_TYPE: ${{ inputs.resolution_type }}
@@ -189,50 +183,7 @@ runs:
           ROOT_CAUSE_CATEGORY=""
         fi
 
-        # Both legacy (changelog/deploys/...) AND structured
-        # (changelog/entries/...) keys.
-        LEGACY_KEY="${S3_PREFIX}/${TS_KEY}_${REPO_SHORT}_${SHA7}.json"
         STRUCTURED_KEY="${STRUCTURED_PREFIX}/${ENTRY_DATE}/${EVENT_ID}.json"
-
-        # Legacy entry — preserved verbatim. Aggregator still reads this
-        # path in PR 2 of the arc; switches to structured-only in PR 4.
-        LEGACY_ENTRY=$(jq -n \
-          --arg ts_utc          "${TS_UTC}" \
-          --arg event_type      "deploy" \
-          --arg repo            "${REPO}" \
-          --arg branch          "${REF}" \
-          --arg sha             "${SHA}" \
-          --arg sha7            "${SHA7}" \
-          --argjson pr_number   "${PR_NUMBER:-null}" \
-          --arg pr_title        "${PR_TITLE}" \
-          --arg pr_body         "${PR_BODY}" \
-          --arg pr_url          "$( [[ -n "${PR_NUMBER}" ]] && echo "https://github.com/${REPO}/pull/${PR_NUMBER}" || echo "" )" \
-          --arg author          "${ACTOR}" \
-          --argjson files_changed "${FILES_CHANGED}" \
-          --arg deploy_workflow "${DEPLOY_WORKFLOW}" \
-          --arg deploy_status   "${DEPLOY_STATUS}" \
-          --arg event_name      "${EVENT_NAME}" \
-          --arg workflow_name   "${WORKFLOW_NAME}" \
-          --arg workflow_run_id "${WORKFLOW_RUN_ID}" \
-          '{
-            ts_utc: $ts_utc,
-            event_type: $event_type,
-            repo: $repo,
-            branch: $branch,
-            sha: $sha,
-            sha7: $sha7,
-            pr_number: $pr_number,
-            pr_title: $pr_title,
-            pr_body: $pr_body,
-            pr_url: $pr_url,
-            author: $author,
-            files_changed: $files_changed,
-            deploy_workflow: $deploy_workflow,
-            deploy_status: $deploy_status,
-            event_name: $event_name,
-            workflow_name: $workflow_name,
-            workflow_run_id: $workflow_run_id
-          }')
 
         # Structured entry — schema 1.0.0 per
         # alpha-engine-config/changelog/vocab.yaml. Carries the controlled-
@@ -300,14 +251,9 @@ runs:
             }
           }')
 
-        echo "Legacy entry (pr_body truncated for log):"
-        echo "${LEGACY_ENTRY}" | jq '.pr_body |= (if length > 200 then .[:200] + "…" else . end)'
-        echo
         echo "Structured entry (description truncated for log):"
         echo "${STRUCTURED_ENTRY}" | jq '.description |= (if length > 200 then .[:200] + "…" else . end)'
         echo
-        echo "Legacy key:     s3://${S3_BUCKET}/${LEGACY_KEY}"
         echo "Structured key: s3://${S3_BUCKET}/${STRUCTURED_KEY}"
 
-        echo "${LEGACY_ENTRY}" | aws s3 cp - "s3://${S3_BUCKET}/${LEGACY_KEY}" --content-type application/json
         echo "${STRUCTURED_ENTRY}" | aws s3 cp - "s3://${S3_BUCKET}/${STRUCTURED_KEY}" --content-type application/json
