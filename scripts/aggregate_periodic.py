@@ -32,6 +32,8 @@ JSON shape (schema 1.0.0):
         mttr_seconds_mean, mttr_seconds_p50, mttr_seconds_p95
     }
     open_issues:    [{event_id, summary, age_days}, ...]   (started_at populated, resolved_at null)
+    retro_candidates: [{event_id, summary, severity, subsystem, root_cause_category, ts_utc}, ...]
+                                                          (incidents that qualify for editorial polish)
     deltas_vs_prior: {entry_count, incident_count, mttr_mean_seconds}
 
 Self-contained on stdlib + the `aws` CLI subprocess (no boto3 dep).
@@ -55,6 +57,16 @@ SCHEMA_VERSION = "1.0.0"
 DEFAULT_BUCKET = "alpha-engine-research"
 ENTRIES_PREFIX = "changelog/entries"
 AGGREGATES_PREFIX = "changelog/aggregates"
+
+RETRO_RESOLUTION_NOTES_MIN_CHARS = 200
+RETRO_SEVERITIES = ("high", "critical")
+SEVERITY_EMOJI = {
+    "critical": "🔴",
+    "high": "🟠",
+    "medium": "🟡",
+    "low": "⚪",
+    "informational": "⚪",
+}
 
 
 # -------------------- period helpers --------------------------------
@@ -263,6 +275,18 @@ def compute_rollup(
     open_issues.sort(key=lambda x: x["age_days"], reverse=True)
     open_issues = open_issues[:10]
 
+    retro_candidates_summary = [
+        {
+            "event_id": c.get("event_id", ""),
+            "ts_utc": c.get("ts_utc", ""),
+            "summary": (c.get("summary") or "")[:160],
+            "severity": c.get("severity"),
+            "subsystem": c.get("subsystem"),
+            "root_cause_category": c.get("root_cause_category"),
+        }
+        for c in extract_retro_candidates(entries)
+    ]
+
     return {
         "schema_version": SCHEMA_VERSION,
         "period_type": period_type,
@@ -287,6 +311,7 @@ def compute_rollup(
             "mttr_seconds_p95": _percentile(mttr_secs, 95),
         },
         "open_issues": open_issues,
+        "retro_candidates": retro_candidates_summary,
     }
 
 
@@ -311,6 +336,133 @@ def _safe_delta(a: float | None, b: float | None) -> float | None:
     if a is None or b is None:
         return None
     return round(a - b, 1)
+
+
+# -------------------- retro candidate mining -------------------------
+
+def extract_retro_candidates(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Filter entries to incidents that qualify for editorial retro/blog polish.
+
+    ROADMAP > Observability > "Retro candidates section in periodic aggregator":
+    `event_type=incident` ∧ `severity ∈ {high, critical}` ∧ `root_cause_category`
+    populated ∧ `resolution_notes ≥ 200 chars`. Together these select for
+    incidents with a substantive operator-authored writeup, filtering out
+    auto-emitted SNS-mirror entries (which lack `resolution_notes`).
+    Sorted newest-first by `ts_utc` so the most recent candidates surface first.
+    """
+    out: list[dict[str, Any]] = []
+    for e in entries:
+        if e.get("event_type") != "incident":
+            continue
+        if e.get("severity") not in RETRO_SEVERITIES:
+            continue
+        if not (e.get("root_cause_category") or "").strip():
+            continue
+        notes = e.get("resolution_notes") or ""
+        if len(notes) < RETRO_RESOLUTION_NOTES_MIN_CHARS:
+            continue
+        out.append(e)
+    out.sort(key=lambda e: e.get("ts_utc", ""), reverse=True)
+    return out
+
+
+def render_retro_candidate_oneliner(e: dict[str, Any]) -> str:
+    """One-line summary used inside the rollup markdown's `## Retro candidates`."""
+    emoji = SEVERITY_EMOJI.get(e.get("severity", ""), "⚪")
+    subsystem = e.get("subsystem", "?")
+    rcc = e.get("root_cause_category", "uncategorized")
+    summary = (e.get("summary") or "")[:140]
+    git_refs = e.get("git_refs") or []
+    refs_str = ""
+    if git_refs:
+        refs_str = " · " + " ".join(f"`{ref}`" for ref in git_refs[:5])
+    eid = e.get("event_id", "")
+    return (
+        f"- {emoji} `{subsystem}` · `{rcc}` — {summary}{refs_str}  \n"
+        f"  <sub>`event_id={eid}`</sub>"
+    )
+
+
+def render_retro_candidate_stub(e: dict[str, Any], period_id: str) -> str:
+    """Editorial scaffold stub. Operator fills in the narrative section.
+
+    Discipline (per `feedback_retros_scaffold_auto_narrative_manual`):
+    auto-source the factual scaffold, manual-write the narrative.
+    """
+    emoji = SEVERITY_EMOJI.get(e.get("severity", ""), "⚪")
+    summary = e.get("summary", "Untitled incident")
+    lines: list[str] = [
+        f"# {emoji} {summary}",
+        "",
+        f"_Period: {period_id} · event_id: `{e.get('event_id', '')}`_",
+        "",
+        "## Facts (from changelog corpus)",
+        "",
+        f"- **Subsystem:** `{e.get('subsystem', '?')}`",
+        f"- **Severity:** `{e.get('severity', '?')}`",
+        f"- **Root cause category:** `{e.get('root_cause_category', '?')}`",
+        f"- **Resolution type:** `{e.get('resolution_type', '?')}`",
+        f"- **Started:** {e.get('started_at') or 'n/a'}",
+        f"- **Detected:** {e.get('detected_at') or 'n/a'}",
+        f"- **Resolved:** {e.get('resolved_at') or 'n/a'}",
+    ]
+    git_refs = e.get("git_refs") or []
+    if git_refs:
+        lines.append(
+            "- **Git refs:** " + ", ".join(f"`{r}`" for r in git_refs)
+        )
+    description = (e.get("description") or "").strip()
+    if description:
+        lines += ["", "## Description (from corpus)", "", description]
+    lines += [
+        "",
+        "## Resolution notes (from corpus)",
+        "",
+        e.get("resolution_notes", "_(missing)_"),
+        "",
+        "---",
+        "",
+        "## Narrative — TODO",
+        "",
+        "_(Operator: write the blog/retro narrative here. "
+        "Discipline: scaffold auto, narrative manual.)_",
+        "",
+        "### What happened",
+        "",
+        "### Why it was interesting",
+        "",
+        "### What we changed / learned",
+        "",
+        "### Generalizable lesson",
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def write_retro_candidate_stubs(
+    candidates: list[dict[str, Any]],
+    period_id: str,
+    scaffold_dir: Path,
+) -> list[Path]:
+    """Write per-candidate stubs to `<scaffold_dir>/{period_id}/{event_id}.md`.
+
+    Skips candidates whose stub already exists — operators may have started
+    editing; never overwrite editorial work. Returns paths that were newly
+    created.
+    """
+    period_dir = scaffold_dir / period_id
+    period_dir.mkdir(parents=True, exist_ok=True)
+    written: list[Path] = []
+    for cand in candidates:
+        eid = cand.get("event_id") or ""
+        if not eid:
+            continue
+        stub_path = period_dir / f"{eid}.md"
+        if stub_path.exists():
+            continue
+        stub_path.write_text(render_retro_candidate_stub(cand, period_id))
+        written.append(stub_path)
+    return written
 
 
 # -------------------- markdown render --------------------------------
@@ -377,6 +529,21 @@ def render_markdown(rollup: dict[str, Any]) -> str:
             )
         lines.append("")
 
+    retro_cands = p.get("retro_candidates") or []
+    if retro_cands:
+        lines.append("## Retro candidates")
+        lines.append("")
+        lines.append(
+            f"_Incidents this period qualifying for editorial polish "
+            f"(severity ∈ {{high, critical}} ∧ root_cause_category populated "
+            f"∧ resolution_notes ≥ {RETRO_RESOLUTION_NOTES_MIN_CHARS} chars). "
+            f"Scaffold auto, narrative manual._"
+        )
+        lines.append("")
+        for cand in retro_cands:
+            lines.append(render_retro_candidate_oneliner(cand))
+        lines.append("")
+
     if p["open_issues"]:
         lines.append("## Longest-lived open issues")
         lines.append("")
@@ -435,6 +602,16 @@ def main(argv: list[str] | None = None) -> int:
             "If omitted, syncs s3://{bucket}/changelog/entries/ to a temp dir."
         ),
     )
+    parser.add_argument(
+        "--scaffold-dir",
+        help=(
+            "Local dir to write per-candidate retro stubs to. When set, every "
+            "qualifying retro candidate gets a markdown stub at "
+            "<scaffold-dir>/{period_id}/{event_id}.md. Existing files are "
+            "preserved (operator may have started editing). Operator-only "
+            "flag — CI runs do not pass it."
+        ),
+    )
     args = parser.parse_args(argv)
 
     reference = (
@@ -474,6 +651,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         rollup = add_deltas(rollup, prior_rollup if prior_entries else None)
         markdown = render_markdown(rollup)
+        retro_full = extract_retro_candidates(period_entries)
     finally:
         if cleanup_temp:
             import shutil
@@ -486,8 +664,25 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Period:    {args.period} {period_id} ({start} → {end})")
     print(f"Entries:   {rollup['entry_count']}")
     print(f"Incidents: {rollup['incidents']['count']}")
+    print(f"Retro candidates: {len(retro_full)}")
     print(f"JSON key:  s3://{args.bucket}/{json_key}")
     print(f"MD key:    s3://{args.bucket}/{md_key}")
+
+    if args.scaffold_dir and retro_full:
+        scaffold_dir = Path(args.scaffold_dir).expanduser()
+        if args.dry_run:
+            print(
+                f"\n(--dry-run + --scaffold-dir: would write "
+                f"{len(retro_full)} stub(s) under {scaffold_dir}/{period_id}/)"
+            )
+        else:
+            written = write_retro_candidate_stubs(retro_full, period_id, scaffold_dir)
+            print(f"Wrote {len(written)} retro stub(s) to {scaffold_dir}/{period_id}/")
+            for path in written:
+                print(f"  + {path}")
+            skipped = len(retro_full) - len(written)
+            if skipped:
+                print(f"  (skipped {skipped} pre-existing stub(s))")
 
     if args.dry_run:
         print("\n=== JSON ===")
