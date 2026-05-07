@@ -231,6 +231,181 @@ def test_fmt_secs():
     assert ap._fmt_secs(None) == "n/a"
 
 
+# --- retro candidate mining -----------------------------------------
+
+_QUALIFYING_NOTES = "x" * 250  # > 200 char threshold
+
+
+def _retro_qualifying_entry(**overrides):
+    base = _entry(
+        event_type="incident",
+        severity="high",
+        subsystem="executor",
+        root_cause_category="code_bug",
+        resolution_notes=_QUALIFYING_NOTES,
+        event_id="qualifies-1",
+        ts_utc="2026-04-30T12:00:00Z",
+        summary="Real bug with real fix",
+    )
+    base.update(overrides)
+    return base
+
+
+def test_retro_filter_passes_qualifying_entry():
+    cands = ap.extract_retro_candidates([_retro_qualifying_entry()])
+    assert len(cands) == 1
+    assert cands[0]["event_id"] == "qualifies-1"
+
+
+def test_retro_filter_excludes_non_incident():
+    cands = ap.extract_retro_candidates(
+        [_retro_qualifying_entry(event_type="change")]
+    )
+    assert cands == []
+
+
+def test_retro_filter_excludes_low_severity():
+    """Medium/low/info/null severity all filtered out."""
+    for sev in ("medium", "low", "informational", None):
+        cands = ap.extract_retro_candidates(
+            [_retro_qualifying_entry(severity=sev)]
+        )
+        assert cands == [], f"severity={sev} should not qualify"
+
+
+def test_retro_filter_excludes_missing_root_cause():
+    """Auto-emitted entries without root_cause_category filtered out."""
+    for rcc in (None, "", "  "):
+        cands = ap.extract_retro_candidates(
+            [_retro_qualifying_entry(root_cause_category=rcc)]
+        )
+        assert cands == [], f"root_cause_category={rcc!r} should not qualify"
+
+
+def test_retro_filter_excludes_short_resolution_notes():
+    """Resolution notes < 200 chars filtered (excludes auto-emit + thin writeups)."""
+    for notes in (None, "", "x" * 199):
+        cands = ap.extract_retro_candidates(
+            [_retro_qualifying_entry(resolution_notes=notes)]
+        )
+        assert cands == [], f"len={len(notes or '')} should not qualify"
+
+
+def test_retro_filter_passes_critical_severity():
+    cands = ap.extract_retro_candidates(
+        [_retro_qualifying_entry(severity="critical", event_id="crit-1")]
+    )
+    assert len(cands) == 1
+
+
+def test_retro_filter_sorts_newest_first():
+    entries = [
+        _retro_qualifying_entry(event_id="a", ts_utc="2026-04-28T00:00:00Z"),
+        _retro_qualifying_entry(event_id="b", ts_utc="2026-05-01T00:00:00Z"),
+        _retro_qualifying_entry(event_id="c", ts_utc="2026-04-30T00:00:00Z"),
+    ]
+    cands = ap.extract_retro_candidates(entries)
+    assert [c["event_id"] for c in cands] == ["b", "c", "a"]
+
+
+def test_retro_oneliner_includes_severity_emoji_and_subsystem():
+    line = ap.render_retro_candidate_oneliner(
+        _retro_qualifying_entry(severity="critical", subsystem="predictor")
+    )
+    assert ap.SEVERITY_EMOJI["critical"] in line
+    assert "`predictor`" in line
+    assert "`code_bug`" in line
+
+
+def test_retro_oneliner_renders_git_refs():
+    line = ap.render_retro_candidate_oneliner(
+        _retro_qualifying_entry(git_refs=["alpha-engine#145", "abc1234"])
+    )
+    assert "`alpha-engine#145`" in line
+    assert "`abc1234`" in line
+
+
+def test_retro_stub_includes_facts_and_narrative_todo():
+    stub = ap.render_retro_candidate_stub(
+        _retro_qualifying_entry(severity="critical"), "2026-W18"
+    )
+    # Facts surface
+    assert "## Facts (from changelog corpus)" in stub
+    assert "**Subsystem:** `executor`" in stub
+    assert "**Severity:** `critical`" in stub
+    assert "**Root cause category:** `code_bug`" in stub
+    # Narrative scaffold surface (for operator)
+    assert "## Narrative — TODO" in stub
+    assert "### What happened" in stub
+    assert "### Why it was interesting" in stub
+    assert "### Generalizable lesson" in stub
+    # Resolution notes copied verbatim
+    assert _QUALIFYING_NOTES in stub
+
+
+def test_rollup_includes_retro_candidates_field():
+    entries = [
+        _retro_qualifying_entry(event_id="x"),
+        _entry(event_type="change"),  # not a candidate
+    ]
+    r = ap.compute_rollup(
+        entries, period_type="weekly", period_id="2026-W18",
+        period_start=date(2026, 4, 27), period_end=date(2026, 5, 3),
+    )
+    assert "retro_candidates" in r
+    assert len(r["retro_candidates"]) == 1
+    cand = r["retro_candidates"][0]
+    assert cand["event_id"] == "x"
+    assert cand["severity"] == "high"
+    assert cand["subsystem"] == "executor"
+    assert cand["root_cause_category"] == "code_bug"
+
+
+def test_markdown_render_includes_retro_section_when_present():
+    entries = [_retro_qualifying_entry(event_id="r1")]
+    r = ap.compute_rollup(
+        entries, period_type="weekly", period_id="2026-W18",
+        period_start=date(2026, 4, 27), period_end=date(2026, 5, 3),
+    )
+    md = ap.render_markdown(r)
+    assert "## Retro candidates" in md
+    assert "event_id=r1" in md
+
+
+def test_markdown_render_omits_retro_section_when_empty():
+    entries = [_entry(event_type="change")]
+    r = ap.compute_rollup(
+        entries, period_type="weekly", period_id="2026-W18",
+        period_start=date(2026, 4, 27), period_end=date(2026, 5, 3),
+    )
+    md = ap.render_markdown(r)
+    assert "## Retro candidates" not in md
+
+
+def test_write_retro_stubs_creates_files(tmp_path: Path):
+    cands = [
+        _retro_qualifying_entry(event_id="evt-a"),
+        _retro_qualifying_entry(event_id="evt-b", severity="critical"),
+    ]
+    written = ap.write_retro_candidate_stubs(cands, "2026-W18", tmp_path)
+    assert len(written) == 2
+    assert (tmp_path / "2026-W18" / "evt-a.md").exists()
+    assert (tmp_path / "2026-W18" / "evt-b.md").exists()
+
+
+def test_write_retro_stubs_skips_existing(tmp_path: Path):
+    """Pre-existing stubs preserved — operator may have started editing."""
+    period_dir = tmp_path / "2026-W18"
+    period_dir.mkdir()
+    existing = period_dir / "evt-a.md"
+    existing.write_text("# operator's draft, do not overwrite")
+    written = ap.write_retro_candidate_stubs(
+        [_retro_qualifying_entry(event_id="evt-a")], "2026-W18", tmp_path
+    )
+    assert written == []
+    assert existing.read_text() == "# operator's draft, do not overwrite"
+
+
 def main() -> int:
     import tempfile
     tests = [v for k, v in globals().items() if k.startswith("test_") and callable(v)]
