@@ -126,3 +126,18 @@ def test_ready_for_retro_requires_resolution_notes():
     entries = [_entry(summary="written up", resolution_notes=long_notes)]
     p = erc.build_payload(entries, 90, date(2026, 3, 9), date(2026, 6, 7))
     assert p["ready_for_retro_count"] == 1
+
+
+def test_main_write_path_does_not_crash(tmp_path, monkeypatch):
+    """Exercises the real (non-dry-run) S3 write + success-print path — the
+    dry-run tests skip it, which is how a stale payload key reached prod."""
+    import json as _json
+    day = tmp_path / "2026-06-01"
+    day.mkdir()
+    (day / "x.json").write_text(_json.dumps(_entry(ts_utc="2026-06-01T00:00:00Z")))
+    written = {}
+    monkeypatch.setattr(erc, "_aws_s3_put",
+                        lambda bucket, key, body, ct: written.update(key=key, body=body))
+    rc = erc.main(["--corpus-dir", str(tmp_path), "--window-days", "3650"])
+    assert rc == 0
+    assert written.get("key") == erc.DEFAULT_OUT_KEY

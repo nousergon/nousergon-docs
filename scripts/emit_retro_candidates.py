@@ -244,7 +244,9 @@ def main(argv: list[str] | None = None) -> int:
         _aws_s3_put(args.bucket, args.out_key, body, "application/json")
         print(
             f"Wrote s3://{args.bucket}/{args.out_key} "
-            f"({payload['count']} candidate(s), window {window_start}..{window_end})"
+            f"({payload['ready_for_retro_count']} ready, "
+            f"{payload['incident_group_count']} incident group(s), "
+            f"window {window_start}..{window_end})"
         )
 
     return 0
