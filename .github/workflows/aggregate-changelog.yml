@@ -37,6 +37,11 @@ jobs:
     timeout-minutes: 10
 
     steps:
+      - name: Checkout (for scripts/emit_retro_candidates.py)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
       - name: Configure AWS credentials via OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -67,8 +72,7 @@ jobs:
           # run yet (PR 3 of the arc) or the operator is iterating mid-day.
           # Warn but don't fail — sparse output is a recoverable state.
           if (( ENTRY_COUNT < 10 )); then
-            echo "::warning::Structured corpus has only ${ENTRY_COUNT} entries — \
-backfill_changelog.py may not have run yet. Markdown will be sparse until it does."
+            echo "::warning::Structured corpus has only ${ENTRY_COUNT} entries — backfill_changelog.py may not have run yet. Markdown will be sparse until it does."
           fi
 
           python3 - <<'PY' > /tmp/CHANGELOG.md
@@ -261,3 +265,14 @@ backfill_changelog.py may not have run yet. Markdown will be sparse until it doe
             --content-type "text/markdown; charset=utf-8"
 
           echo "::notice::Materialized changelog: s3://${BUCKET}/changelog/CHANGELOG.md (${ENTRY_COUNT} entries)"
+
+      - name: Emit rolling retro candidates feed
+        run: |
+          set -euo pipefail
+          # Reuses the entries already synced to /tmp/entries by the step above.
+          # Writes changelog/retro_candidates.json — the data source for the
+          # console Retros page. Factual scaffold only; narrative stays manual
+          # (feedback_retros_scaffold_auto_narrative_manual).
+          python3 scripts/emit_retro_candidates.py \
+            --corpus-dir /tmp/entries \
+            --window-days 90
