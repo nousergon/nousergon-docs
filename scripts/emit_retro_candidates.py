@@ -88,9 +88,24 @@ _PROJECT_FIELDS = (
 )
 
 
+def _normalize_git_refs(refs: Any) -> list[dict[str, Any]]:
+    """Coerce git_refs to a list of dicts. Some legacy producers (e.g.
+    prompt-version-autoemit) write bare SHA strings; the dashboard renderer
+    expects dicts, so normalize here at the contract boundary."""
+    out: list[dict[str, Any]] = []
+    for r in refs or []:
+        if isinstance(r, dict):
+            out.append(r)
+        elif isinstance(r, str):
+            out.append({"sha": r})
+    return out
+
+
 def project_candidate(e: dict[str, Any]) -> dict[str, Any]:
     """Project a raw entry to the stable console contract subset."""
-    return {k: e.get(k) for k in _PROJECT_FIELDS}
+    proj = {k: e.get(k) for k in _PROJECT_FIELDS}
+    proj["git_refs"] = _normalize_git_refs(proj.get("git_refs"))
+    return proj
 
 
 # Severity rank for picking a group's representative (worst) severity.

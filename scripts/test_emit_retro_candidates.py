@@ -110,6 +110,17 @@ def test_build_payload_shape():
     assert p["ready_for_retro_count"] == 0  # no resolution_notes
 
 
+def test_normalize_git_refs_handles_string_and_dict():
+    # bare SHA strings (prompt-version-autoemit) -> {sha}; dicts preserved
+    out = erc._normalize_git_refs(["1a6ac95", {"repo": "cipher813/x", "pr_number": 5}, 42])
+    assert out == [{"sha": "1a6ac95"}, {"repo": "cipher813/x", "pr_number": 5}]
+
+
+def test_project_candidate_normalizes_git_refs():
+    c = erc.project_candidate(_entry(git_refs=["deadbee"]))
+    assert c["git_refs"] == [{"sha": "deadbee"}]
+
+
 def test_ready_for_retro_requires_resolution_notes():
     long_notes = "x" * erc.RETRO_RESOLUTION_NOTES_MIN_CHARS
     entries = [_entry(summary="written up", resolution_notes=long_notes)]
