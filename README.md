@@ -4,7 +4,7 @@
 
 [![Part of Nous Ergon](https://img.shields.io/badge/Part_of-Nous_Ergon-1a73e8?style=flat-square)](https://nousergon.ai)
 [![Changelog](https://img.shields.io/github/actions/workflow/status/cipher813/alpha-engine-docs/aggregate-changelog-weekly.yml?branch=main&style=flat-square&label=changelog)](https://github.com/cipher813/alpha-engine-docs/actions)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow?style=flat-square)](LICENSE)
+[![License: AGPL-3.0-only](https://img.shields.io/badge/License-AGPL--3.0--only-yellow?style=flat-square)](LICENSE)
 [![Phase 2 · Reliability](https://img.shields.io/badge/Phase_2-Reliability-e9c46a?style=flat-square)](#phase-trajectory)
 
 System-overview entry point. Detailed module documentation, blog posts, the live dashboard, and metrics validation live on the public site.
@@ -124,4 +124,4 @@ flowchart LR
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+AGPL-3.0-only — see [LICENSE](LICENSE). Commercial licenses available — contact brian@nousergon.ai.
