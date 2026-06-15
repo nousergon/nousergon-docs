@@ -74,15 +74,15 @@ Target length: **50–80 lines per repo**. PR #98 (alpha-engine-research, 58 lin
 > Part of [**Nous Ergon**](https://nousergon.ai) — Autonomous Multi-Agent Trading System. Repo and S3 names use the underlying project name `alpha-engine`.
 
 [![Part of Nous Ergon](https://img.shields.io/badge/Part_of-Nous_Ergon-1a73e8?style=flat-square)](https://nousergon.ai)
-[![CI](https://img.shields.io/github/actions/workflow/status/cipher813/alpha-engine-<module>/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/cipher813/alpha-engine-<module>/actions/workflows/ci.yml)
+[![CI](https://img.shields.io/github/actions/workflow/status/nousergon/alpha-engine-<module>/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/nousergon/alpha-engine-<module>/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.13+-blue?style=flat-square)](https://www.python.org/)
 <!-- 2-3 stack badges per branding/badge_bar.md -->
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow?style=flat-square)](LICENSE)
-[![Phase 2 · Reliability](https://img.shields.io/badge/Phase_2-Reliability-e9c46a?style=flat-square)](https://github.com/cipher813/alpha-engine-docs#phase-trajectory)
+[![Phase 2 · Reliability](https://img.shields.io/badge/Phase_2-Reliability-e9c46a?style=flat-square)](https://github.com/nousergon/nousergon-docs#phase-trajectory)
 
 <ONE-LINE MODULE STATEMENT — what this module does in one sentence.>
 
-> System overview, Step Function orchestration, and module relationships live in [`alpha-engine-docs`](https://github.com/cipher813/alpha-engine-docs). Code index lives in [`OVERVIEW.md`](OVERVIEW.md).
+> System overview, Step Function orchestration, and module relationships live in [`alpha-engine-docs`](https://github.com/nousergon/nousergon-docs). Code index lives in [`OVERVIEW.md`](OVERVIEW.md).
 
 ## What this does
 
@@ -106,20 +106,20 @@ Target length: **50–80 lines per repo**. PR #98 (alpha-engine-research, 58 lin
 
 ## Configuration
 
-This repo is **public**. <Sentence on what's gitignored locally vs what's in the private [`alpha-engine-config`](https://github.com/cipher813/alpha-engine-config) repo.> Architecture and approach are public; specific values are private.
+This repo is **public**. <Sentence on what's gitignored locally vs what's in the private [`alpha-engine-config`](https://github.com/nousergon/alpha-engine-config) repo.> Architecture and approach are public; specific values are private.
 
 ## Sister repos
 
 | Module | Repo |
 |---|---|
-| Executor | [`alpha-engine`](https://github.com/cipher813/alpha-engine) |
-| Data | [`alpha-engine-data`](https://github.com/cipher813/alpha-engine-data) |
-| Research | [`alpha-engine-research`](https://github.com/cipher813/alpha-engine-research) |
-| Predictor | [`alpha-engine-predictor`](https://github.com/cipher813/alpha-engine-predictor) |
-| Backtester | [`alpha-engine-backtester`](https://github.com/cipher813/alpha-engine-backtester) |
-| Dashboard | [`alpha-engine-dashboard`](https://github.com/cipher813/alpha-engine-dashboard) |
-| Library | [`alpha-engine-lib`](https://github.com/cipher813/alpha-engine-lib) |
-| Docs | [`alpha-engine-docs`](https://github.com/cipher813/alpha-engine-docs) |
+| Executor | [`alpha-engine`](https://github.com/nousergon/crucible-executor) |
+| Data | [`alpha-engine-data`](https://github.com/nousergon/nousergon-data) |
+| Research | [`alpha-engine-research`](https://github.com/nousergon/crucible-research) |
+| Predictor | [`alpha-engine-predictor`](https://github.com/nousergon/crucible-predictor) |
+| Backtester | [`alpha-engine-backtester`](https://github.com/nousergon/crucible-backtester) |
+| Dashboard | [`alpha-engine-dashboard`](https://github.com/nousergon/crucible-dashboard) |
+| Library | [`alpha-engine-lib`](https://github.com/nousergon/nousergon-lib) |
+| Docs | [`alpha-engine-docs`](https://github.com/nousergon/nousergon-docs) |
 
 ## License
 

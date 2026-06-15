@@ -54,15 +54,27 @@ STRUCTURED_PREFIX = "changelog/entries"
 # Repo → subsystem mapping. Mirrors the case-block in
 # .github/actions/append-changelog/action.yml. Keep aligned.
 REPO_SUBSYSTEM = {
+    # Both pre- and post-rename short-names map, so historical backfill
+    # data (old names) and live events (new names) both resolve.
     "alpha-engine": "executor",
+    "crucible-executor": "executor",
     "alpha-engine-research": "research",
+    "crucible-research": "research",
     "alpha-engine-predictor": "predictor",
+    "crucible-predictor": "predictor",
     "alpha-engine-data": "data_pipeline",
+    "nousergon-data": "data_pipeline",
     "alpha-engine-backtester": "backtester",
+    "crucible-backtester": "backtester",
     "alpha-engine-dashboard": "dashboard",
+    "crucible-dashboard": "dashboard",
     "alpha-engine-config": "infrastructure",
     "alpha-engine-docs": "infrastructure",
+    "nousergon-docs": "infrastructure",
     "alpha-engine-lib": "infrastructure",
+    "nousergon-lib": "infrastructure",
+    "alpha-engine-evaluator": "infrastructure",
+    "crucible-evaluator": "infrastructure",
     "mnemon": "infrastructure",
     "flow-doctor": "telemetry",
 }

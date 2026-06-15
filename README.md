@@ -3,7 +3,7 @@
 > Part of [**Nous Ergon**](https://nousergon.ai) — a harness for rigorous AI/ML experiments in finance: an equity research-and-trading system instrumented end-to-end. Repo and S3 names use the underlying project name `alpha-engine`.
 
 [![Part of Nous Ergon](https://img.shields.io/badge/Part_of-Nous_Ergon-1a73e8?style=flat-square)](https://nousergon.ai)
-[![Changelog](https://img.shields.io/github/actions/workflow/status/cipher813/alpha-engine-docs/aggregate-changelog-weekly.yml?branch=main&style=flat-square&label=changelog)](https://github.com/cipher813/alpha-engine-docs/actions)
+[![Changelog](https://img.shields.io/github/actions/workflow/status/nousergon/nousergon-docs/aggregate-changelog-weekly.yml?branch=main&style=flat-square&label=changelog)](https://github.com/nousergon/nousergon-docs/actions)
 [![License: AGPL-3.0-only](https://img.shields.io/badge/License-AGPL--3.0--only-yellow?style=flat-square)](LICENSE)
 [![Phase 2 · Reliability](https://img.shields.io/badge/Phase_2-Reliability-e9c46a?style=flat-square)](#phase-trajectory)
 
@@ -41,14 +41,14 @@ Per-phase key objectives, the Phase 2 → 3 transparency-inventory gate, and Pha
 
 | Module | Repo | Today |
 |---|---|---|
-| **Data** | [`alpha-engine-data`](https://github.com/cipher813/alpha-engine-data) | ~50 features × ~900 tickers × 10y in ArcticDB; weekly refresh + daily delta |
-| **Research** | [`alpha-engine-research`](https://github.com/cipher813/alpha-engine-research) | 6 sector teams + CIO + macro economist; weekly scan; rubric-based LLM-as-judge on key stages |
-| **Predictor** | [`alpha-engine-predictor`](https://github.com/cipher813/alpha-engine-predictor) | Layer-1 LightGBM momentum + LightGBM volatility + research-score calibrator → Layer-2 Ridge meta-learner; 21 features in production inference |
-| **Executor** | [`alpha-engine`](https://github.com/cipher813/alpha-engine) | Risk-gated paper trading via IB Gateway; 4 entry-trigger types; ATR trailing stops |
-| **Backtester** | [`alpha-engine-backtester`](https://github.com/cipher813/alpha-engine-backtester) | Weekly evaluator + autonomous optimizers writing 4 configs to S3 (scoring weights, executor params, predictor veto, research params) |
-| **Dashboard** | [`alpha-engine-dashboard`](https://github.com/cipher813/alpha-engine-dashboard) | Read-only Streamlit; powers nousergon.ai (public) and console.nousergon.ai (private, Cloudflare Access) |
+| **Data** | [`alpha-engine-data`](https://github.com/nousergon/nousergon-data) | ~50 features × ~900 tickers × 10y in ArcticDB; weekly refresh + daily delta |
+| **Research** | [`alpha-engine-research`](https://github.com/nousergon/crucible-research) | 6 sector teams + CIO + macro economist; weekly scan; rubric-based LLM-as-judge on key stages |
+| **Predictor** | [`alpha-engine-predictor`](https://github.com/nousergon/crucible-predictor) | Layer-1 LightGBM momentum + LightGBM volatility + research-score calibrator → Layer-2 Ridge meta-learner; 21 features in production inference |
+| **Executor** | [`alpha-engine`](https://github.com/nousergon/crucible-executor) | Risk-gated paper trading via IB Gateway; 4 entry-trigger types; ATR trailing stops |
+| **Backtester** | [`alpha-engine-backtester`](https://github.com/nousergon/crucible-backtester) | Weekly evaluator + autonomous optimizers writing 4 configs to S3 (scoring weights, executor params, predictor veto, research params) |
+| **Dashboard** | [`alpha-engine-dashboard`](https://github.com/nousergon/crucible-dashboard) | Read-only Streamlit; powers nousergon.ai (public) and console.nousergon.ai (private, Cloudflare Access) |
 
-Plus two supporting repos: a public shared library [`alpha-engine-lib`](https://github.com/cipher813/alpha-engine-lib) (logging, freshness gates, trading-calendar arithmetic, ArcticDB helpers, agent decision capture, LLM cost tracking) used by all 6 modules, and a private [`alpha-engine-config`](https://github.com/cipher813/alpha-engine-config) repo holding proprietary scoring weights, agent prompts, model parameters, and other tuned values. Disclosure boundary: architecture and approach are public; specific weights, prompts, and thresholds are private.
+Plus two supporting repos: a public shared library [`alpha-engine-lib`](https://github.com/nousergon/nousergon-lib) (logging, freshness gates, trading-calendar arithmetic, ArcticDB helpers, agent decision capture, LLM cost tracking) used by all 6 modules, and a private [`alpha-engine-config`](https://github.com/nousergon/alpha-engine-config) repo holding proprietary scoring weights, agent prompts, model parameters, and other tuned values. Disclosure boundary: architecture and approach are public; specific weights, prompts, and thresholds are private.
 
 ## System architecture
 

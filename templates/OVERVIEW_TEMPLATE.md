@@ -47,7 +47,7 @@ Target length: **60–100 lines per repo**. Each row of each table is a couple w
 ```markdown
 # alpha-engine-<module> — Code Index
 
-> Index of entry points, key files, and data contracts for this repo. Companion to [README.md](README.md). System overview lives in [`alpha-engine-docs`](https://github.com/cipher813/alpha-engine-docs).
+> Index of entry points, key files, and data contracts for this repo. Companion to [README.md](README.md). System overview lives in [`alpha-engine-docs`](https://github.com/nousergon/nousergon-docs).
 >
 > Last reviewed: <YYYY-MM-DD>
 

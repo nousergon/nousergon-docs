@@ -25,14 +25,14 @@ def _legacy_deploy(**overrides):
     base = {
         "ts_utc": "2026-05-01T16:09:17Z",
         "event_type": "deploy",
-        "repo": "cipher813/alpha-engine-data",
+        "repo": "nousergon/nousergon-data",
         "branch": "main",
         "sha": "acb7496ef38b99f834cb74ee50161ccdb6980c6f",
         "sha7": "acb7496",
         "pr_number": 122,
         "pr_title": "feat(orchestration): SNS→S3 changelog incident mirror Lambda",
         "pr_body": "## Summary\nAdds a small Lambda...",
-        "pr_url": "https://github.com/cipher813/alpha-engine-data/pull/122",
+        "pr_url": "https://github.com/nousergon/nousergon-data/pull/122",
         "author": "cipher813",
         "files_changed": 4,
         "deploy_workflow": "deploy-infrastructure.yml",
@@ -106,14 +106,14 @@ def test_deploy_success_to_change():
     assert out["verified_at"] == "2026-05-01T16:09:17Z"
     assert out["git_refs"] == [
         {
-            "repo": "cipher813/alpha-engine-data",
+            "repo": "nousergon/nousergon-data",
             "sha": "acb7496ef38b99f834cb74ee50161ccdb6980c6f",
             "pr_number": 122,
         }
     ]
     assert out["deploy"]["status"] == "success"
     assert out["deploy"]["workflow"] == "deploy-infrastructure.yml"
-    assert out["deploy"]["pr_url"] == "https://github.com/cipher813/alpha-engine-data/pull/122"
+    assert out["deploy"]["pr_url"] == "https://github.com/nousergon/nousergon-data/pull/122"
 
 
 def test_deploy_failure_to_incident():
@@ -141,7 +141,7 @@ def test_deploy_subsystem_inference():
         ("unknown-repo", "infrastructure"),
     ]
     for repo_short, expected in cases:
-        out = bf.transform_deploy(_legacy_deploy(repo=f"cipher813/{repo_short}"))
+        out = bf.transform_deploy(_legacy_deploy(repo=f"nousergon/{repo_short}"))
         assert out["subsystem"] == expected, f"{repo_short} → {out['subsystem']}, expected {expected}"
 
 
@@ -149,7 +149,7 @@ def test_deploy_handles_missing_pr_number():
     out = bf.transform_deploy(_legacy_deploy(pr_number=None))
     assert out["git_refs"] == [
         {
-            "repo": "cipher813/alpha-engine-data",
+            "repo": "nousergon/nousergon-data",
             "sha": "acb7496ef38b99f834cb74ee50161ccdb6980c6f",
         }
     ]
@@ -225,7 +225,7 @@ def test_deploy_event_id_uses_repo_short_segment():
     # Format: {ts_id}_{repo_short}_{hash}
     parts = out["event_id"].split("_")
     assert parts[0] == "2026-05-01T16-09-17"
-    assert parts[1] == "alpha-engine-data"
+    assert parts[1] == "nousergon-data"
     assert len(parts[2]) == 7
 
 

@@ -18,14 +18,14 @@ Replace `<REPO_NAME>` and stack badges per repo. Phase badge color (`amber`) mat
 
 ```markdown
 [![Part of Nous Ergon](https://img.shields.io/badge/Part_of-Nous_Ergon-1a73e8?style=flat-square)](https://nousergon.ai)
-[![CI](https://img.shields.io/github/actions/workflow/status/cipher813/<REPO_NAME>/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/cipher813/<REPO_NAME>/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/dynamic/json?url=https://raw.githubusercontent.com/cipher813/<REPO_NAME>/main/.github/badges/tests.json&query=$.message&label=tests&style=flat-square&color=brightgreen)](https://github.com/cipher813/<REPO_NAME>/actions)
+[![CI](https://img.shields.io/github/actions/workflow/status/nousergon/<REPO_NAME>/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/nousergon/<REPO_NAME>/actions/workflows/ci.yml)
+[![Tests](https://img.shields.io/badge/dynamic/json?url=https://raw.githubusercontent.com/nousergon/<REPO_NAME>/main/.github/badges/tests.json&query=$.message&label=tests&style=flat-square&color=brightgreen)](https://github.com/nousergon/<REPO_NAME>/actions)
 [![Python](https://img.shields.io/badge/python-3.13+-blue?style=flat-square)](https://www.python.org/)
 <!-- 2-3 stack badges, e.g.: -->
 [![LangGraph](https://img.shields.io/badge/LangGraph-1C3D5A?style=flat-square)](https://langchain-ai.github.io/langgraph/)
 [![AWS Lambda](https://img.shields.io/badge/AWS_Lambda-FF9900?style=flat-square&logo=awslambda&logoColor=white)](https://aws.amazon.com/lambda/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow?style=flat-square)](LICENSE)
-[![Phase 2 · Reliability](https://img.shields.io/badge/Phase_2-Reliability-e9c46a?style=flat-square)](https://github.com/cipher813/alpha-engine-docs#phase-trajectory)
+[![Phase 2 · Reliability](https://img.shields.io/badge/Phase_2-Reliability-e9c46a?style=flat-square)](https://github.com/nousergon/nousergon-docs#phase-trajectory)
 ```
 
 ## Per-repo stack badge picks (suggested)

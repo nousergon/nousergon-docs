@@ -173,5 +173,5 @@ IAM user already has it.
 between scheduled runs:
 
 ```bash
-gh workflow run aggregate-changelog.yml -R cipher813/alpha-engine-docs
+gh workflow run aggregate-changelog.yml -R nousergon/nousergon-docs
 ```
