@@ -112,8 +112,8 @@ def test_build_payload_shape():
 
 def test_normalize_git_refs_handles_string_and_dict():
     # bare SHA strings (prompt-version-autoemit) -> {sha}; dicts preserved
-    out = erc._normalize_git_refs(["1a6ac95", {"repo": "cipher813/x", "pr_number": 5}, 42])
-    assert out == [{"sha": "1a6ac95"}, {"repo": "cipher813/x", "pr_number": 5}]
+    out = erc._normalize_git_refs(["1a6ac95", {"repo": "nousergon/x", "pr_number": 5}, 42])
+    assert out == [{"sha": "1a6ac95"}, {"repo": "nousergon/x", "pr_number": 5}]
 
 
 def test_project_candidate_normalizes_git_refs():

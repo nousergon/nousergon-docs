@@ -13,7 +13,7 @@ Add a final step to your existing deploy job:
 ```yaml
 - name: Append to system changelog
   if: always()  # capture failures too — set deploy_status accordingly
-  uses: cipher813/alpha-engine-docs/.github/actions/append-changelog@main
+  uses: nousergon/nousergon-docs/.github/actions/append-changelog@main
   with:
     deploy_status: ${{ job.status == 'success' && 'success' || 'failure' }}
     deploy_workflow: ${{ github.workflow }}
@@ -40,7 +40,7 @@ jobs:
           role-to-assume: arn:aws:iam::711398986525:role/github-actions-lambda-deploy
           aws-region: us-east-1
       - uses: actions/checkout@v4
-      - uses: cipher813/alpha-engine-docs/.github/actions/append-changelog@main
+      - uses: nousergon/nousergon-docs/.github/actions/append-changelog@main
         with:
           deploy_status: merged
 ```
@@ -77,7 +77,7 @@ Legacy dual-write to `changelog/deploys/{YYYY}/{MM}/{DD}T...` retired
   "machine": "github-actions",
   "source": "ci-deploy",
   "auto_emitted": true,
-  "git_refs": [{"repo": "cipher813/alpha-engine-data", "sha": "febaccb...", "pr_number": 119}],
+  "git_refs": [{"repo": "nousergon/nousergon-data", "sha": "febaccb...", "pr_number": 119}],
   "prompt_version": null,
   "run_id": null,
   "eval_run_ref": null,
@@ -86,7 +86,7 @@ Legacy dual-write to `changelog/deploys/{YYYY}/{MM}/{DD}T...` retired
     "workflow": "deploy.yml",
     "workflow_run_id": "1234567890",
     "sha7": "febaccb",
-    "pr_url": "https://github.com/cipher813/alpha-engine-data/pull/119",
+    "pr_url": "https://github.com/nousergon/nousergon-data/pull/119",
     "files_changed": 8
   }
 }

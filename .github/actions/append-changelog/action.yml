@@ -23,7 +23,7 @@ description: 'Writes a deploy-event JSON to s3://alpha-engine-research/changelog
 # changelog/deploys/ objects remain in S3 for retroactive queries.
 #
 # Caller pattern:
-#   - uses: cipher813/alpha-engine-docs/.github/actions/append-changelog@main
+#   - uses: nousergon/nousergon-docs/.github/actions/append-changelog@main
 #     with:
 #       deploy_status: success     # or failure / merged
 #     # implicit context (repo, sha, ref, pr_number, pr_body) comes from github.* env
@@ -145,19 +145,22 @@ runs:
         # Repo → subsystem mapping (controlled-vocab field for the
         # structured entry). Update when a new module repo lands.
         # Aligns with the module taxonomy in CLAUDE.md.
+        # Both pre- and post-rename short-names are listed so historical
+        # backfill data (old names) and live events (new names) both resolve.
         case "${REPO_SHORT}" in
-          alpha-engine)            DERIVED_SUBSYSTEM="executor" ;;
-          alpha-engine-research)   DERIVED_SUBSYSTEM="research" ;;
-          alpha-engine-predictor)  DERIVED_SUBSYSTEM="predictor" ;;
-          alpha-engine-data)       DERIVED_SUBSYSTEM="data_pipeline" ;;
-          alpha-engine-backtester) DERIVED_SUBSYSTEM="backtester" ;;
-          alpha-engine-dashboard)  DERIVED_SUBSYSTEM="dashboard" ;;
-          alpha-engine-config)     DERIVED_SUBSYSTEM="infrastructure" ;;
-          alpha-engine-docs)       DERIVED_SUBSYSTEM="infrastructure" ;;
-          alpha-engine-lib)        DERIVED_SUBSYSTEM="infrastructure" ;;
-          mnemon)                  DERIVED_SUBSYSTEM="infrastructure" ;;
-          flow-doctor)             DERIVED_SUBSYSTEM="telemetry" ;;
-          *)                       DERIVED_SUBSYSTEM="infrastructure" ;;
+          alpha-engine|crucible-executor)              DERIVED_SUBSYSTEM="executor" ;;
+          alpha-engine-research|crucible-research)      DERIVED_SUBSYSTEM="research" ;;
+          alpha-engine-predictor|crucible-predictor)    DERIVED_SUBSYSTEM="predictor" ;;
+          alpha-engine-data|nousergon-data)             DERIVED_SUBSYSTEM="data_pipeline" ;;
+          alpha-engine-backtester|crucible-backtester)  DERIVED_SUBSYSTEM="backtester" ;;
+          alpha-engine-dashboard|crucible-dashboard)    DERIVED_SUBSYSTEM="dashboard" ;;
+          alpha-engine-config)                          DERIVED_SUBSYSTEM="infrastructure" ;;
+          alpha-engine-docs|nousergon-docs)             DERIVED_SUBSYSTEM="infrastructure" ;;
+          alpha-engine-lib|nousergon-lib)               DERIVED_SUBSYSTEM="infrastructure" ;;
+          alpha-engine-evaluator|crucible-evaluator)    DERIVED_SUBSYSTEM="infrastructure" ;;
+          mnemon)                                       DERIVED_SUBSYSTEM="infrastructure" ;;
+          flow-doctor)                                  DERIVED_SUBSYSTEM="telemetry" ;;
+          *)                                            DERIVED_SUBSYSTEM="infrastructure" ;;
         esac
         SUBSYSTEM="${SUBSYSTEM_OVERRIDE:-${DERIVED_SUBSYSTEM}}"
 
