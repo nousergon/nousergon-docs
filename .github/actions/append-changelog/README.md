@@ -50,6 +50,21 @@ jobs:
 This action emits a single structured entry per deploy event to
 `changelog/entries/{YYYY-MM-DD}/{event_id}.json` (schema 1.0.0).
 
+### Vocab validation + quarantine (config#863)
+
+Before the `aws s3 cp`, the action validates the controlled-vocab fields
+(`event_type`, `severity`, `subsystem`, `root_cause_category`,
+`resolution_type`) against the enums vendored from
+`alpha-engine-config/changelog/vocab.yaml` — the same sets the auto-emit
+Lambdas enforce in `_shared/vocab.py`. The derived defaults always
+conform; this guards the operator-supplied `with: subsystem:` /
+`with: resolution_type:` overrides. A non-conforming value routes the
+entry to `changelog/quarantine/{YYYY-MM-DD}/{event_id}.json` with a
+`validation_errors` field instead of `changelog/entries/`, mirroring the
+Lambda behavior, so the corpus + retro-mining filter only see conforming
+entries. Routing to quarantine is non-fatal (the deploy log stays green;
+quarantine is triaged separately — config#868).
+
 Legacy dual-write to `changelog/deploys/{YYYY}/{MM}/{DD}T...` retired
 2026-05-07 after the 1-week back-compat bake. Historical entries under
 `changelog/deploys/` remain in S3 for retroactive queries.

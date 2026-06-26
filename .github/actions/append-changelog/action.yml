@@ -257,6 +257,61 @@ runs:
         echo "Structured entry (description truncated for log):"
         echo "${STRUCTURED_ENTRY}" | jq '.description |= (if length > 200 then .[:200] + "…" else . end)'
         echo
+
+        # ----- vocab validation (config#863) ------------------------------
+        # The auto-emit Lambdas (_shared/vocab.py) validate vocab fields and
+        # route violators to changelog/quarantine/ rather than entries/, so
+        # the corpus + retro-mining filter only see vocab-conforming entries.
+        # This action writes deploy entries WITHOUT that check — a malformed
+        # `subsystem`/`resolution_type` override (free-form `with:` inputs)
+        # would silently land in entries/. Mirror the Lambda behavior here.
+        #
+        # Enums vendored from alpha-engine-config/changelog/vocab.yaml v1.0.0
+        # (additive-only per the S3 contract — see SCHEMA_EVOLUTION.md). The
+        # derived defaults (subsystem case-map, resolution_type=code_fix,
+        # event_type/severity/root_cause set by status) are always conforming;
+        # this guards the operator-supplied overrides.
+        EVENT_TYPES=" incident change recovery investigation regression_test_added prompt_version_change infrastructure_change eval_score_regression "
+        SEVERITIES=" critical high medium low informational "
+        SUBSYSTEMS=" retrieval agents predictor executor backtester dashboard research infrastructure prompts eval data_pipeline telemetry "
+        ROOT_CAUSE_CATEGORIES=" data_quality model_behavior infrastructure_failure code_bug third_party_api prompt_regression schema_evolution configuration "
+        RESOLUTION_TYPES=" code_fix prompt_revision config_change dependency_update architectural_refactor monitoring_added manual_intervention no_action_required "
+
+        # check_vocab <field-name> <value> <allowed-set> — appends a
+        # human-readable error to VALIDATION_ERRORS when value is non-empty
+        # and outside the set. Empty/null values are tolerated (nullable
+        # fields populated on operator follow-up), matching vocab.py.
+        VALIDATION_ERRORS=()
+        check_vocab() {
+          local field="$1" value="$2" allowed="$3"
+          [[ -z "${value}" ]] && return 0
+          if [[ "${allowed}" != *" ${value} "* ]]; then
+            VALIDATION_ERRORS+=("vocab field '${field}'='${value}' not in allowed set")
+          fi
+        }
+        check_vocab event_type          "${STRUCTURED_EVENT_TYPE}" "${EVENT_TYPES}"
+        check_vocab severity            "${STRUCTURED_SEVERITY}"   "${SEVERITIES}"
+        check_vocab subsystem           "${SUBSYSTEM}"             "${SUBSYSTEMS}"
+        check_vocab root_cause_category "${ROOT_CAUSE_CATEGORY}"   "${ROOT_CAUSE_CATEGORIES}"
+        check_vocab resolution_type     "${RESOLUTION_TYPE}"      "${RESOLUTION_TYPES}"
+
+        if [[ ${#VALIDATION_ERRORS[@]} -gt 0 ]]; then
+          # Route to quarantine/ with a validation_errors field, mirroring the
+          # auto-emit Lambdas. Non-fatal: the deploy log shouldn't go red over
+          # a vocab typo, and an operator triages quarantine (config#868).
+          QUARANTINE_PREFIX="${STRUCTURED_PREFIX%/entries}/quarantine"
+          [[ "${QUARANTINE_PREFIX}" == "${STRUCTURED_PREFIX}" ]] && QUARANTINE_PREFIX="changelog/quarantine"
+          QUARANTINE_KEY="${QUARANTINE_PREFIX}/${ENTRY_DATE}/${EVENT_ID}.json"
+          printf 'Vocab validation FAILED — routing to quarantine:\n'
+          printf '  - %s\n' "${VALIDATION_ERRORS[@]}"
+          ERRORS_JSON=$(printf '%s\n' "${VALIDATION_ERRORS[@]}" | jq -R . | jq -s .)
+          STRUCTURED_ENTRY=$(echo "${STRUCTURED_ENTRY}" | jq --argjson errs "${ERRORS_JSON}" '. + {validation_errors: $errs}')
+          echo "Quarantine key: s3://${S3_BUCKET}/${QUARANTINE_KEY}"
+          echo "${STRUCTURED_ENTRY}" | aws s3 cp - "s3://${S3_BUCKET}/${QUARANTINE_KEY}" --content-type application/json
+          exit 0
+        fi
+
+        echo "Vocab validation OK."
         echo "Structured key: s3://${S3_BUCKET}/${STRUCTURED_KEY}"
 
         echo "${STRUCTURED_ENTRY}" | aws s3 cp - "s3://${S3_BUCKET}/${STRUCTURED_KEY}" --content-type application/json
