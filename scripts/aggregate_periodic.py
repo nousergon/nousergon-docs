@@ -32,6 +32,8 @@ JSON shape (schema 1.0.0):
         mttr_seconds_mean, mttr_seconds_p50, mttr_seconds_p95
     }
     open_issues:    [{event_id, summary, age_days}, ...]   (started_at populated, resolved_at null)
+    stale_default_triage: [{event_id, summary, subsystem, age_days}, ...]
+                          (auto_emitted ∧ root_cause_category=infrastructure_failure ∧ age > 7d)
     retro_candidates: [{event_id, summary, severity, subsystem, root_cause_category, ts_utc}, ...]
                                                           (incidents that qualify for editorial polish)
     deltas_vs_prior: {entry_count, incident_count, mttr_mean_seconds}
@@ -60,6 +62,12 @@ AGGREGATES_PREFIX = "changelog/aggregates"
 
 RETRO_RESOLUTION_NOTES_MIN_CHARS = 200
 RETRO_SEVERITIES = ("high", "critical")
+
+# Stale auto-emitted default triage (config#866). Auto-emit Lambdas default
+# this root_cause_category; entries still carrying it past the grace period
+# (in days) are surfaced as "needs operator triage".
+STALE_DEFAULT_ROOT_CAUSE = "infrastructure_failure"
+STALE_DEFAULT_GRACE_DAYS = 7
 SEVERITY_EMOJI = {
     "critical": "🔴",
     "high": "🟠",
@@ -275,6 +283,34 @@ def compute_rollup(
     open_issues.sort(key=lambda x: x["age_days"], reverse=True)
     open_issues = open_issues[:10]
 
+    # Stale auto-emitted defaults (config#866). Auto-emit Lambdas (SNS-mirror,
+    # cloudwatch-mirror) default root_cause_category=infrastructure_failure
+    # until an operator refines via `changelog-log --event-type investigation`.
+    # Flag entries still carrying that default past a 7-day grace period so the
+    # rollup nudges operator triage. Age is from ts_utc (auto-emitted entries
+    # leave started_at null, so the open_issues pass above never sees them).
+    stale_default_triage: list[dict[str, Any]] = []
+    for e in entries:
+        if not e.get("auto_emitted"):
+            continue
+        if e.get("root_cause_category") != STALE_DEFAULT_ROOT_CAUSE:
+            continue
+        ts = _parse_iso_utc(e.get("ts_utc"))
+        if ts is None:
+            continue
+        age = (now - ts).total_seconds() / 86400.0
+        if age <= STALE_DEFAULT_GRACE_DAYS:
+            continue
+        stale_default_triage.append(
+            {
+                "event_id": e.get("event_id", ""),
+                "summary": (e.get("summary") or "")[:160],
+                "subsystem": e.get("subsystem"),
+                "age_days": round(age, 2),
+            }
+        )
+    stale_default_triage.sort(key=lambda x: x["age_days"], reverse=True)
+
     retro_candidates_summary = [
         {
             "event_id": c.get("event_id", ""),
@@ -311,6 +347,7 @@ def compute_rollup(
             "mttr_seconds_p95": _percentile(mttr_secs, 95),
         },
         "open_issues": open_issues,
+        "stale_default_triage": stale_default_triage,
         "retro_candidates": retro_candidates_summary,
     }
 
@@ -542,6 +579,26 @@ def render_markdown(rollup: dict[str, Any]) -> str:
         lines.append("")
         for cand in retro_cands:
             lines.append(render_retro_candidate_oneliner(cand))
+        lines.append("")
+
+    stale = p.get("stale_default_triage") or []
+    if stale:
+        lines.append("## Needs operator triage (stale auto-emitted defaults)")
+        lines.append("")
+        lines.append(
+            f"_Auto-emitted entries still carrying the default "
+            f"`root_cause_category={STALE_DEFAULT_ROOT_CAUSE}` past the "
+            f"{STALE_DEFAULT_GRACE_DAYS}-day grace period. Refine via "
+            f"`changelog-log --event-type investigation` referencing the "
+            f"`event_id`._"
+        )
+        lines.append("")
+        for st in stale:
+            sub = f" · `{st['subsystem']}`" if st.get("subsystem") else ""
+            lines.append(
+                f"- `{st['age_days']}d`{sub} — {st['summary']}  "
+                f"<sub>`event_id={st['event_id']}`</sub>"
+            )
         lines.append("")
 
     if p["open_issues"]:
