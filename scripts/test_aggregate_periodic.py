@@ -406,6 +406,120 @@ def test_write_retro_stubs_skips_existing(tmp_path: Path):
     assert existing.read_text() == "# operator's draft, do not overwrite"
 
 
+# --- stale auto-emitted default triage (config#866) -----------------
+
+def _recent_ts_utc(days_ago: float) -> str:
+    from datetime import timedelta, timezone, datetime as _dt
+    return (_dt.now(timezone.utc) - timedelta(days=days_ago)).strftime(
+        "%Y-%m-%dT%H:%M:%SZ"
+    )
+
+
+def _stale_default_entry(**fields):
+    """An auto-emitted incident still carrying the default root_cause."""
+    base = dict(
+        event_type="incident",
+        auto_emitted=True,
+        root_cause_category="infrastructure_failure",
+        started_at=None,  # mirrors emit null started_at
+    )
+    base.update(fields)
+    return _entry(**base)
+
+
+def test_stale_default_flagged_past_grace():
+    entries = [
+        _stale_default_entry(
+            event_id="stale", ts_utc=_recent_ts_utc(10), summary="old default"
+        ),
+    ]
+    r = ap.compute_rollup(
+        entries, period_type="weekly", period_id="x",
+        period_start=date(2026, 1, 1), period_end=date(2030, 1, 1),
+    )
+    ids = [s["event_id"] for s in r["stale_default_triage"]]
+    assert ids == ["stale"]
+    assert r["stale_default_triage"][0]["age_days"] > ap.STALE_DEFAULT_GRACE_DAYS
+
+
+def test_stale_default_within_grace_excluded():
+    entries = [
+        _stale_default_entry(
+            event_id="fresh", ts_utc=_recent_ts_utc(2), summary="recent default"
+        ),
+    ]
+    r = ap.compute_rollup(
+        entries, period_type="weekly", period_id="x",
+        period_start=date(2026, 1, 1), period_end=date(2030, 1, 1),
+    )
+    assert r["stale_default_triage"] == []
+
+
+def test_stale_default_requires_auto_emitted():
+    # Same age + root_cause but NOT auto-emitted (operator-authored) → excluded.
+    entries = [
+        _stale_default_entry(
+            event_id="manual", ts_utc=_recent_ts_utc(20), auto_emitted=False
+        ),
+    ]
+    r = ap.compute_rollup(
+        entries, period_type="weekly", period_id="x",
+        period_start=date(2026, 1, 1), period_end=date(2030, 1, 1),
+    )
+    assert r["stale_default_triage"] == []
+
+
+def test_stale_default_excluded_when_root_cause_refined():
+    # Operator refined the default away → no longer flagged even if old.
+    entries = [
+        _stale_default_entry(
+            event_id="refined",
+            ts_utc=_recent_ts_utc(30),
+            root_cause_category="code_bug",
+        ),
+    ]
+    r = ap.compute_rollup(
+        entries, period_type="weekly", period_id="x",
+        period_start=date(2026, 1, 1), period_end=date(2030, 1, 1),
+    )
+    assert r["stale_default_triage"] == []
+
+
+def test_stale_default_sorted_oldest_first():
+    entries = [
+        _stale_default_entry(event_id="b", ts_utc=_recent_ts_utc(9)),
+        _stale_default_entry(event_id="a", ts_utc=_recent_ts_utc(25)),
+    ]
+    r = ap.compute_rollup(
+        entries, period_type="weekly", period_id="x",
+        period_start=date(2026, 1, 1), period_end=date(2030, 1, 1),
+    )
+    assert [s["event_id"] for s in r["stale_default_triage"]] == ["a", "b"]
+
+
+def test_markdown_includes_triage_section_when_present():
+    entries = [
+        _stale_default_entry(event_id="t1", ts_utc=_recent_ts_utc(12)),
+    ]
+    r = ap.compute_rollup(
+        entries, period_type="weekly", period_id="x",
+        period_start=date(2026, 1, 1), period_end=date(2030, 1, 1),
+    )
+    md = ap.render_markdown(r)
+    assert "Needs operator triage" in md
+    assert "event_id=t1" in md
+
+
+def test_markdown_omits_triage_section_when_empty():
+    entries = [_entry(event_type="change")]
+    r = ap.compute_rollup(
+        entries, period_type="weekly", period_id="x",
+        period_start=date(2026, 1, 1), period_end=date(2030, 1, 1),
+    )
+    md = ap.render_markdown(r)
+    assert "Needs operator triage" not in md
+
+
 def main() -> int:
     import tempfile
     tests = [v for k, v in globals().items() if k.startswith("test_") and callable(v)]
