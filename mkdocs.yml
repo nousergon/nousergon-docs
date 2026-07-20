@@ -1,0 +1,46 @@
+site_name: Crucible API Reference
+site_description: >-
+  Landing page for the auto-generated Python API reference of the public
+  Crucible (Alpha Engine) repos. Per-repo API pages are built as separate
+  mkdocstrings sites (see api-src/) and published alongside this one under
+  /api/<repo>/ — see api-src/README.md for why.
+site_url: https://nousergon.github.io/nousergon-docs/
+repo_url: https://github.com/nousergon/nousergon-docs
+repo_name: nousergon/nousergon-docs
+edit_uri: ""
+docs_dir: docs
+
+# Companion surface to nousergon.ai, not a replacement for it. nousergon.ai
+# stays canonical for narrative/marketing content; this site exists solely
+# to publish auto-generated API reference pages, which need real GitHub
+# Pages build tooling that nousergon.ai's own build does not currently
+# expose. See alpha-engine-config#2646 for the design call.
+#
+# This top-level mkdocs.yml builds ONLY the landing page (docs/index.md) —
+# it deliberately has no mkdocstrings plugin. The actual API pages are built
+# by the per-repo configs in api-src/<repo>/mkdocs.yml and copied into
+# site/api/<repo>/ by the publish workflow. See api-src/README.md.
+nav:
+  - Home: index.md
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.instant
+    - navigation.top
+    - content.code.copy
+    - search.suggest
+
+plugins:
+  - search

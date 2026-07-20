@@ -1,0 +1,34 @@
+site_name: alpha-engine-lib API Reference
+site_url: https://nousergon.github.io/nousergon-docs/api/nousergon-lib/
+repo_url: https://github.com/nousergon/nousergon-lib
+repo_name: nousergon/nousergon-lib
+edit_uri: ""
+
+# One of 7 isolated per-repo API sub-sites — see ../README.md for why this
+# is split per-repo instead of one combined mkdocs.yml. This file's `paths:`
+# below is scoped ONLY to this repo's checkout, so top-level module names
+# (e.g. `config`, `data`) never collide with any other repo's build.
+nav:
+  - Overview: index.md
+
+theme:
+  name: material
+  features:
+    - navigation.top
+    - content.code.copy
+    - search.suggest
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [checkout/src]
+          options:
+            docstring_style: google
+            show_source: true
+            show_root_heading: true
+            show_root_full_path: false
+            merge_init_into_class: true
+            show_if_no_docstring: false
+            filters: ["!^_"]

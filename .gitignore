@@ -9,3 +9,11 @@ private/
 # Python bytecode (created when scripts/changelog_log.py is imported by tests)
 __pycache__/
 *.pyc
+
+# mkdocs build output + build-time source checkouts (publish-docs.yml).
+# checkout/ dirs are ephemeral shallow clones of other repos, created fresh
+# by CI before each mkdocstrings build and never committed — see
+# api-src/README.md for the mechanism.
+site/
+api-src/*/checkout/
+api-src/*/site/
