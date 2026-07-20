@@ -1,0 +1,30 @@
+site_name: Backtester API Reference
+site_url: https://nousergon.github.io/nousergon-docs/api/crucible-backtester/
+repo_url: https://github.com/nousergon/crucible-backtester
+repo_name: nousergon/crucible-backtester
+edit_uri: ""
+
+nav:
+  - Overview: index.md
+
+theme:
+  name: material
+  features:
+    - navigation.top
+    - content.code.copy
+    - search.suggest
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [checkout]
+          options:
+            docstring_style: google
+            show_source: true
+            show_root_heading: true
+            show_root_full_path: false
+            merge_init_into_class: true
+            show_if_no_docstring: false
+            filters: ["!^_"]

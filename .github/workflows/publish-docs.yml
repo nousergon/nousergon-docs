@@ -1,0 +1,122 @@
+name: Publish API docs to GitHub Pages
+
+# Builds the mkdocs landing page (root mkdocs.yml / docs/) plus one
+# mkdocstrings sub-site per public Crucible code repo (api-src/<repo>/,
+# each with its own mkdocs.yml scoped to that repo's build-time checkout —
+# see api-src/README.md for why this is split per-repo instead of one
+# combined config), assembles them into a single site/ tree with each
+# sub-site under site/api/<repo>/, and deploys to GitHub Pages.
+#
+# alpha-engine-config#2646: Option A (mkdocstrings + mkdocs-material +
+# GitHub Pages directly in this repo), per Brian's 2026-07-16 operator
+# ruling. Only PUBLIC Crucible repos are checked out/rendered — see the
+# matrix below and api-src/README.md's "Public-repo scope" section.
+#
+# One-time manual step (cannot be done via API/PAT — repo Settings UI
+# only): Settings -> Pages -> Build and deployment -> Source:
+# "GitHub Actions". Until that's toggled, this workflow can still run and
+# build successfully, but the deploy job's actions/deploy-pages step will
+# fail with no Pages site to publish to.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "mkdocs.yml"
+      - "docs/**"
+      - "api-src/**"
+      - ".github/workflows/publish-docs.yml"
+  workflow_dispatch:
+  schedule:
+    # Weekly Monday 06:00 UTC — picks up docstring changes merged to the
+    # public repos' `main` since the last build, without needing a push to
+    # THIS repo. Ahead of aggregate-changelog-weekly.yml's Monday 07:00 UTC
+    # run so a docs refresh and the weekly changelog rollup land the same
+    # morning.
+    - cron: "0 6 * * 1"
+
+concurrency:
+  group: publish-docs
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout nousergon-docs
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Set up Python
+        uses: actions/setup-python@e797f83a9a1eb28d5c9c72d90b53f4b7e91b4a2b # v6.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Install mkdocs tooling
+        run: |
+          pip install --disable-pip-version-check \
+            mkdocs \
+            mkdocs-material \
+            "mkdocstrings[python]"
+
+      - name: Build landing page
+        run: mkdocs build --strict --site-dir /tmp/site-root
+
+      # Public repos only (alpha-engine-config#2646) — verified visibility
+      # via `gh repo view nousergon/<repo> --json visibility` for all 8
+      # repos before this list was written. alpha-engine-config and any
+      # other private/*-ops repo must NEVER be added here: this workflow's
+      # build output is published to a public GitHub Pages site.
+      - name: Build per-repo API sub-sites
+        run: |
+          set -euo pipefail
+          # Each api-src/<repo>/mkdocs.yml's `paths:` already points at the
+          # right subdir for that repo's layout (checkout/src for
+          # nousergon-lib's src/ package layout, checkout for the other
+          # flat-layout repos) — nothing repo-specific needed here beyond
+          # the clone itself.
+          for repo in nousergon-lib crucible-executor nousergon-data crucible-predictor crucible-research crucible-backtester crucible-dashboard crucible-evaluator; do
+            echo "::group::${repo}"
+            src_dir="api-src/${repo}"
+            checkout_dir="${src_dir}/checkout"
+            rm -rf "${checkout_dir}"
+            git clone --depth 1 "https://github.com/nousergon/${repo}.git" "${checkout_dir}"
+            rm -rf "${checkout_dir}/.git"
+            # Not --strict here (unlike the landing-page build above): griffe
+            # warns on docstring-formatting quirks in the SOURCE repos (odd
+            # indentation, undocumented params) that this repo doesn't
+            # control and shouldn't be able to break this workflow over —
+            # verified locally per-repo (nousergon-lib, crucible-executor)
+            # that these are pre-existing cosmetic warnings, not structural
+            # errors; the pages still render correctly.
+            (cd "${src_dir}" && mkdocs build --site-dir "/tmp/site-root/api/${repo}")
+            rm -rf "${checkout_dir}"
+            echo "::endgroup::"
+          done
+
+      - name: Assemble final site
+        run: |
+          mkdir -p site
+          cp -r /tmp/site-root/. site/
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4.0.0
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5
