@@ -19,6 +19,8 @@ name: Publish API docs to GitHub Pages
 # fail with no Pages site to publish to.
 
 on:
+  pull_request:
+    branches: [main]
   push:
     branches: [main]
     paths:
@@ -110,6 +112,7 @@ jobs:
           path: site
 
   deploy:
+    if: github.ref == 'refs/heads/main'
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 10
