@@ -17,3 +17,6 @@ __pycache__/
 site/
 api-src/*/checkout/
 api-src/*/site/
+
+# Claude Code per-repo config
+CLAUDE.md
