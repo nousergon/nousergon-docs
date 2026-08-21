@@ -1,0 +1,58 @@
+name: tests
+
+# alpha-engine-config-I7980.
+#
+# This repo has carried 78 tests under scripts/ since 2026-05-01 and NO JOB
+# HAS EVER RUN THEM. The cost was measured the day this workflow was added:
+# `test_dry_run_writes_nothing` shipped in the SAME COMMIT as the code it
+# tests (#10) and had been failing for 112 days. It asserted that the S3 key
+# carried `--detected-at`'s date while `s3_keys()` builds the key from
+# `ts_utc`, which defaults to now — so the test was green on exactly one day,
+# 2026-05-01, when the wall clock happened to equal the fixture's date.
+#
+# A test that is green on the day it is written and red every day after is
+# indistinguishable from a passing test to anyone who does not run it. The
+# only thing that separates them is a job.
+#
+# runs-on: ubuntu-latest deliberately: this repo is PUBLIC and gets unlimited
+# free GitHub-hosted minutes, so a self-hosted or CodeBuild runner would spend
+# money to do what is free here (cost-management-policy).
+#
+# The changelog tooling is real code — it writes to
+# s3://alpha-engine-research/changelog/entries/ on the daily aggregate cron —
+# and `scripts/` is where its tests live. `pytest scripts/` is the whole
+# suite; there is no other test directory in this repo.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: '3.12'
+
+      # PyYAML is the only third-party import the suite reaches
+      # (changelog_log.py's vocab loader). Pinned rather than floating: an
+      # unpinned install lets an upstream release turn `main` red here with no
+      # commit in this repo, surfacing on whichever unrelated PR runs next
+      # (alpha-engine-config-I5854).
+      - name: Install test deps
+        run: python -m pip install --quiet 'pytest==8.3.4' 'PyYAML==6.0.2'
+
+      - name: Run suite
+        run: python -m pytest scripts/ -q

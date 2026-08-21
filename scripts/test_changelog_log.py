@@ -236,7 +236,24 @@ def test_parse_prompt_version() -> None:
 
 
 def test_dry_run_writes_nothing(tmp_path: Path) -> None:
-    """End-to-end: dry-run path validates + prints but doesn't call aws."""
+    """End-to-end: dry-run path validates + prints but doesn't call aws.
+
+    `--ts-utc` is passed explicitly and is what the assertion below reads.
+    It used to be omitted while the assertion expected the S3 key to carry
+    `--detected-at`'s date — and `s3_keys()` has always built the key from
+    `ts_utc`, which defaults to `_now_iso()`. So this test was green on
+    exactly one day: 2026-05-01, when the wall clock happened to equal the
+    `--detected-at` in the fixture. It shipped in the same commit as the code
+    (#10) and has failed every day since.
+
+    The two fields are not interchangeable and the fix is not to key the path
+    off `detected_at`: `ts_utc` is when the entry was RECORDED, which is what
+    an append-only log partitions by, and `detected_at` is when the event
+    happened. Backfilling a past event is what `--ts-utc` is for.
+
+    Nothing reported this for 112 days because this repo runs no test job at
+    all — the CI job added alongside this change is the other half of the fix.
+    """
     vocab_file = tmp_path / "vocab.yaml"
     vocab_file.write_text(VOCAB_YAML)
     env = dict(os.environ)
@@ -249,6 +266,7 @@ def test_dry_run_writes_nothing(tmp_path: Path) -> None:
             "--event-type", "investigation",
             "--subsystem", "telemetry",
             "--detected-at", "2026-05-01T19:00:00Z",
+            "--ts-utc", "2026-05-01T19:01:00Z",
             "--summary", "Investigated changelog dual-write",
             "--description", "Smoke test for the new schema-disciplined CLI.",
             "--actor", "smoke-test",
