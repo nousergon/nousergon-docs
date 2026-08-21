@@ -19,4 +19,11 @@ api-src/*/checkout/
 api-src/*/site/
 
 # Claude Code per-repo config
+# AGENTS.md is the CANONICAL agent-instruction file since the 2026-07-23
+# migration; CLAUDE.md is only a symlink to it. This file ignored the
+# symlink and not the file it points at, so the content that must never be
+# public was one `git add -A` from being committed — and it was sitting
+# untracked in the working tree when this was found (2026-08-21).
+# Both names, always: see ~/Development/AGENTS.md.
+AGENTS.md
 CLAUDE.md
