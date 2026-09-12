@@ -12,11 +12,17 @@ name: Publish API docs to GitHub Pages
 # ruling. Only PUBLIC Crucible repos are checked out/rendered — see the
 # matrix below and api-src/README.md's "Public-repo scope" section.
 #
-# One-time manual step (cannot be done via API/PAT — repo Settings UI
-# only): Settings -> Pages -> Build and deployment -> Source:
-# "GitHub Actions". Until that's toggled, this workflow can still run and
-# build successfully, but the deploy job's actions/deploy-pages step will
-# fail with no Pages site to publish to.
+# One-time enablement: Pages must exist with Source = "GitHub Actions"
+# (`build_type: workflow`). Until it does, the build succeeds and the deploy
+# job's actions/deploy-pages step fails "Not Found (404) ... Ensure GitHub
+# Pages has been enabled" — which is exactly how this workflow spent its
+# first four graded runs (alpha-engine-config-I10338): this comment used to
+# say the toggle was "repo Settings UI only", and nobody had toggled it.
+# That claim was wrong. Measured 2026-09-12: the REST API does it —
+#   gh api -X POST repos/nousergon/nousergon-docs/pages -f build_type=workflow
+# — and the next workflow_dispatch run (34710704030) deployed to
+# https://nousergon.github.io/nousergon-docs/. If the site ever reads
+# `has_pages: false` again, that one call is the fix, not a UI visit.
 
 on:
   pull_request:
