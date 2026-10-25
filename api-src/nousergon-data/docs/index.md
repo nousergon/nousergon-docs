@@ -24,6 +24,14 @@ Source: [`nousergon/nousergon-data`](https://github.com/nousergon/nousergon-data
     options:
       show_submodules: true
 
+::: data_gate
+    options:
+      show_submodules: true
+
+::: data_quality
+    options:
+      show_submodules: true
+
 ::: features
     options:
       show_submodules: true
