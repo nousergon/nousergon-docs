@@ -44,6 +44,10 @@ listed below.
     options:
       show_submodules: true
 
+::: results
+    options:
+      show_submodules: true
+
 ::: shared
     options:
       show_submodules: true

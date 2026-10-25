@@ -9,6 +9,10 @@ Source: [`nousergon/crucible-evaluator`](https://github.com/nousergon/crucible-e
     options:
       show_submodules: true
 
+::: evals
+    options:
+      show_submodules: true
+
 ::: grading
     options:
       show_submodules: true
