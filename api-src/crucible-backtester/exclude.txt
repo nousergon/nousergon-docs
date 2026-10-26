@@ -1,0 +1,5 @@
+# Top-level packages of this repo that the API reference leaves out ON PURPOSE.
+# Read by scripts/check_api_coverage.py (alpha-engine-config-I12650): any other
+# top-level package missing from docs/index.md is flagged by publish-docs.yml.
+# One line per package: `<package>  # <reason>`. A line without a reason fails.
+tests  # test suite, not an API

@@ -33,6 +33,7 @@ on:
       - "mkdocs.yml"
       - "docs/**"
       - "api-src/**"
+      - "scripts/check_api_coverage.py"
       - ".github/workflows/publish-docs.yml"
   workflow_dispatch:
   schedule:
@@ -56,6 +57,8 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    outputs:
+      uncovered: ${{ steps.subsites.outputs.uncovered }}
     steps:
       - name: Checkout nousergon-docs
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -82,6 +85,7 @@ jobs:
       # other private/*-ops repo must NEVER be added here: this workflow's
       # build output is published to a public GitHub Pages site.
       - name: Build per-repo API sub-sites
+        id: subsites
         run: |
           set -euo pipefail
           # Each api-src/<repo>/mkdocs.yml's `paths:` already points at the
@@ -89,6 +93,7 @@ jobs:
           # nousergon-lib's src/ package layout, checkout for the other
           # flat-layout repos) — nothing repo-specific needed here beyond
           # the clone itself.
+          uncovered=0
           for repo in nousergon-lib crucible-executor nousergon-data crucible-predictor crucible-research crucible-backtester crucible-dashboard crucible-evaluator; do
             echo "::group::${repo}"
             src_dir="api-src/${repo}"
@@ -96,6 +101,19 @@ jobs:
             rm -rf "${checkout_dir}"
             git clone --depth 1 "https://github.com/nousergon/${repo}.git" "${checkout_dir}"
             rm -rf "${checkout_dir}/.git"
+            # API coverage (alpha-engine-config-I12650): every top-level
+            # package in the checkout must be rendered by docs/index.md or
+            # declared in exclude.txt with a reason. Warn-only here, so a
+            # gap never blocks the weekly refresh; the `api-coverage` job
+            # below turns a gap red on the scheduled run. Exit 2 (the check
+            # cannot read its own declarations) fails the build outright.
+            rc=0
+            python3 scripts/check_api_coverage.py "${src_dir}" --enforce || rc=$?
+            case "${rc}" in
+              0) ;;
+              1) uncovered=$((uncovered + 1)) ;;
+              *) exit "${rc}" ;;
+            esac
             # Not --strict here (unlike the landing-page build above): griffe
             # warns on docstring-formatting quirks in the SOURCE repos (odd
             # indentation, undocumented params) that this repo doesn't
@@ -107,6 +125,7 @@ jobs:
             rm -rf "${checkout_dir}"
             echo "::endgroup::"
           done
+          echo "uncovered=${uncovered}" >> "${GITHUB_OUTPUT}"
 
       - name: Assemble final site
         run: |
@@ -117,6 +136,31 @@ jobs:
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: site
+
+  # alpha-engine-config-I12650: a package added to a public repo used to
+  # never reach the reference, and nothing went red. The build job above
+  # annotates each uncovered package with ::warning:: on every run; this job
+  # fails the SCHEDULED run (the weekly refresh, which is when a new upstream
+  # package first becomes visible here) so the gap pages through the normal
+  # red-workflow path without anyone reading annotations. It is a separate job
+  # so the deploy still ships the refreshed reference for every covered repo.
+  # PR and push runs stay warn-only: a commit to THIS repo cannot add an
+  # upstream package, so failing it would only block unrelated docs work.
+  api-coverage:
+    if: github.event_name == 'schedule'
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Fail when a sub-site leaves a package uncovered
+        env:
+          UNCOVERED: ${{ needs.build.outputs.uncovered }}
+        run: |
+          if [ "${UNCOVERED:-0}" != "0" ]; then
+            echo "::error::${UNCOVERED} API sub-site(s) leave a top-level package uncovered; see the build job's warnings. Fix: add a ::: block to api-src/<repo>/docs/index.md, or declare the package in api-src/<repo>/exclude.txt with a reason."
+            exit 1
+          fi
+          echo "All API sub-sites cover every top-level package."
 
   deploy:
     if: github.ref == 'refs/heads/main'
