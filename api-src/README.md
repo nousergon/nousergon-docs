@@ -84,10 +84,38 @@ Only add a repo here if that returns `"visibility": "PUBLIC"`.
    `site_name`, `site_url`, `repo_url`, `repo_name`, and `paths:` (usually
    just `[checkout]`, or `[checkout/src]` if the repo has a `src/` layout).
 3. Write `api-src/<repo>/docs/index.md` with one `::: <module>` block per
-   top-level importable package (skip `tests/`, and skip any
-   hyphenated directory names — those aren't valid Python identifiers and
-   mkdocstrings can't resolve them).
-4. Add a `checkout: <repo>` entry to the build matrix in
+   top-level importable package. Every package you leave out (`tests`,
+   operational tooling) goes in `api-src/<repo>/exclude.txt` as
+   `<package>  # <reason>` — see "Coverage check" below. Hyphenated
+   directory names aren't Python packages and are never counted.
+4. Add `<repo>` to the `for repo in ...` sub-site list in
    `.github/workflows/publish-docs.yml`.
 5. Link the new page from `docs/index.md` (repo root) and from this
    README's repo list above.
+
+## Coverage check
+
+`docs/index.md` lists its modules by hand, so a package added to a public
+repo used to never reach the reference, and nothing went red
+(alpha-engine-config-I12650; nousergon-docs#68 added the four that had
+been missed). `scripts/check_api_coverage.py` now runs inside
+`publish-docs.yml` right after each sub-site's checkout:
+
+- it lists the top-level packages (directories with `__init__.py`) under
+  the root that sub-site's own `mkdocs.yml` `paths:` declares, and
+  subtracts the packages named by `:::` lines in `docs/index.md` and the
+  ones declared in `exclude.txt`;
+- every package left over is a `::warning::` annotation on every run;
+- the `api-coverage` job fails the **scheduled** weekly run when any
+  sub-site has one, so a new upstream package goes red without anyone
+  reading annotations. PR and push runs stay warn-only, and the deploy
+  still ships;
+- an `exclude.txt` line with no reason, or a missing package root, fails
+  the build outright: a check that cannot read its declarations has not
+  checked anything.
+
+The roster it covers is the workflow's own `for repo in ...` list, the
+same one that decides what gets built. Run it locally against a checkout:
+
+    git clone --depth 1 https://github.com/nousergon/<repo>.git api-src/<repo>/checkout
+    python3 scripts/check_api_coverage.py api-src/<repo> --enforce
