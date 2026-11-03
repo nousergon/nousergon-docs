@@ -22,4 +22,4 @@ permissions:
 
 jobs:
   gitleaks:
-    uses: nousergon/nousergon-lib/.github/workflows/gitleaks-scan.yml@9f0e0e874422c1f49e346abc1ee445c94aa2d314 # main 2026-10-22
+    uses: nousergon/nousergon-lib/.github/workflows/gitleaks-scan.yml@ddb5efc0dcc3e505cad18af5e2194fa21e2b71fa # main 2026-10-22
