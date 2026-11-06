@@ -51,7 +51,7 @@ import json
 import re
 import sys
 import tempfile
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -178,7 +178,7 @@ def group_incidents(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def build_payload(entries: list[dict[str, Any]], window_days: int,
-                  window_start, window_end) -> dict[str, Any]:
+                  window_start: date, window_end: date) -> dict[str, Any]:
     # "Ready for retro" — incidents an operator has already written up (full
     # editorial detail, incl. resolution_notes). Empty until annotation happens.
     ready = [project_candidate(e) for e in extract_retro_candidates(entries)]
