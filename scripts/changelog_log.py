@@ -48,7 +48,7 @@ import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import TypedDict
 
 SCHEMA_VERSION = "1.0.0"
 DEFAULT_BUCKET = "alpha-engine-research"
@@ -64,6 +64,31 @@ LEGACY_PREFIX_BY_TYPE = {
     "eval_score_regression": "changelog/incidents",
 }
 RESOLUTION_NOTES_MIN_CHARS = 200
+
+
+class GitRefSha(TypedDict):
+    """`git_refs` element pinning a repo to a commit SHA (`repo@sha`)."""
+
+    repo: str
+    sha: str
+
+
+class GitRefPr(TypedDict):
+    """`git_refs` element pinning a repo to a PR number (`repo#pr_number`)."""
+
+    repo: str
+    pr_number: int
+
+
+# One `git_refs` element: a repo pinned to either a SHA or a PR number.
+GitRef = GitRefSha | GitRefPr
+
+
+class PromptVersion(TypedDict):
+    """`prompt_version` payload built from `--prompt-version prompt_id:version`."""
+
+    prompt_id: str
+    version: str
 
 
 @dataclass
@@ -99,7 +124,7 @@ class Vocab:
         )
 
 
-def _parse_vocab_yaml_subset(text: str) -> dict[str, Any]:
+def _parse_vocab_yaml_subset(text: str) -> dict[str, str | list[str]]:
     """Stdlib-only parser for the vocab.yaml format.
 
     Supports exactly the subset we use:
@@ -115,7 +140,7 @@ def _parse_vocab_yaml_subset(text: str) -> dict[str, Any]:
     short and the failure mode of "guessed wrong about a field"
     silently breaks validation.
     """
-    out: dict[str, Any] = {}
+    out: dict[str, str | list[str]] = {}
     current_key: str | None = None
     current_list: list[str] | None = None
 
@@ -191,15 +216,15 @@ class Entry:
     verified_at: str | None = None
     description: str | None = None
     resolution_notes: str | None = None
-    git_refs: list[dict[str, Any]] = field(default_factory=list)
-    prompt_version: dict[str, Any] | None = None
+    git_refs: list[GitRef] = field(default_factory=list)
+    prompt_version: PromptVersion | None = None
     run_id: str | None = None
     eval_run_ref: str | None = None
     machine: str = ""
     source: str = "changelog-log"
 
-    def to_dict(self) -> dict[str, Any]:
-        d: dict[str, Any] = {
+    def to_dict(self) -> dict[str, object]:
+        d: dict[str, object] = {
             "schema_version": SCHEMA_VERSION,
             "event_id": self._event_id(),
             "ts_utc": self.ts_utc,
@@ -377,8 +402,8 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def _parse_git_refs(values: list[str]) -> list[dict[str, Any]]:
-    refs: list[dict[str, Any]] = []
+def _parse_git_refs(values: list[str]) -> list[GitRef]:
+    refs: list[GitRef] = []
     for v in values:
         if "@" in v:
             repo, sha = v.split("@", 1)
@@ -397,7 +422,7 @@ def _parse_git_refs(values: list[str]) -> list[dict[str, Any]]:
     return refs
 
 
-def _parse_prompt_version(s: str | None) -> dict[str, Any] | None:
+def _parse_prompt_version(s: str | None) -> PromptVersion | None:
     if not s:
         return None
     if ":" not in s:
