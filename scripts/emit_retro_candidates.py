@@ -57,11 +57,12 @@ from typing import TypedDict, cast
 
 # scripts/ is on sys.path[0] when invoked as `python3 scripts/emit_retro_candidates.py`,
 # so the sibling module imports resolve without packaging.
+import aggregate_periodic
+
 from aggregate_periodic import (
-    ChangelogEntry,
     DEFAULT_BUCKET,
     ENTRIES_PREFIX,
-    JSONValue,
+    ChangelogEntry,
     RETRO_RESOLUTION_NOTES_MIN_CHARS,
     RETRO_SEVERITIES,
     SCHEMA_VERSION,
@@ -89,6 +90,7 @@ _PROJECT_FIELDS = (
     "git_refs",
 )
 
+JSONValue = aggregate_periodic.JSONValue
 _aws_s3_put = aws_s3_put
 _aws_s3_sync = aws_s3_sync
 _utc_today = utc_today
@@ -183,7 +185,8 @@ def group_incidents(entries: list[ChangelogEntry]) -> list[IncidentGroup]:
         if not isinstance(severity_value, str) or severity_value not in RETRO_SEVERITIES:
             continue
         subsystem_value = e.get("subsystem")
-        subsystem = (subsystem_value if isinstance(subsystem_value, str) else "—") or "—"
+        subsystem = subsystem_value if isinstance(subsystem_value, str) else "—"
+        subsystem = subsystem or "—"
         summary_value = e.get("summary")
         summary = summary_value if isinstance(summary_value, str) else ""
         key = (subsystem, _normalize_summary(summary))

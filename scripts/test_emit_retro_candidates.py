@@ -13,7 +13,6 @@ from __future__ import annotations
 import sys
 from datetime import date
 from pathlib import Path
-
 import pytest
 
 HERE = Path(__file__).resolve().parent
@@ -22,7 +21,7 @@ sys.path.insert(0, str(HERE))
 import emit_retro_candidates as erc  # noqa: E402
 
 
-def _entry(**fields: object) -> dict[str, object]:
+def _entry(**fields: object) -> erc.ChangelogEntry:
     base = {
         "schema_version": "1.0.0",
         "event_id": "e",
@@ -145,13 +144,10 @@ def test_main_write_path_does_not_crash(tmp_path: Path, monkeypatch: pytest.Monk
     assert written.get("key") == erc.DEFAULT_OUT_KEY
 
 
-def test_group_preserves_missing_event_id_and_empty_subsystem_output() -> None:
-    entry = _entry()
-    entry.pop("event_id")
-    entry["subsystem"] = ""
-
+def test_group_preserves_missing_event_id_and_empty_subsystem() -> None:
+    entry = _entry(subsystem="")
+    del entry["event_id"]
     groups = erc.group_incidents([entry])
-
     assert groups == [{
         "subsystem": "—",
         "severity": "high",

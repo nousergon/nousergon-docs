@@ -52,10 +52,8 @@ import sys
 import tempfile
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
-from collections.abc import Mapping, Sequence
 from typing import Any, NotRequired, TypedDict
-
-JSONValue = None | bool | int | float | str | Sequence["JSONValue"] | Mapping[str, "JSONValue"]
+from collections.abc import Mapping, Sequence
 
 SCHEMA_VERSION = "1.0.0"
 DEFAULT_BUCKET = "alpha-engine-research"
@@ -64,21 +62,6 @@ AGGREGATES_PREFIX = "changelog/aggregates"
 
 RETRO_RESOLUTION_NOTES_MIN_CHARS = 200
 RETRO_SEVERITIES = ("high", "critical")
-
-
-class ChangelogEntry(TypedDict):
-    """Fields read from changelog JSON; producers may omit any field."""
-
-    event_id: NotRequired[str]
-    ts_utc: NotRequired[str]
-    event_type: NotRequired[str]
-    severity: NotRequired[str]
-    subsystem: NotRequired[str]
-    root_cause_category: NotRequired[str]
-    resolution_type: NotRequired[str]
-    summary: NotRequired[str]
-    resolution_notes: NotRequired[str | None]
-    git_refs: NotRequired[list[str | dict[str, JSONValue]]]
 
 # Stale auto-emitted default triage (config#866). Auto-emit Lambdas default
 # this root_cause_category; entries still carrying it past the grace period
@@ -193,6 +176,24 @@ def aws_s3_put(bucket: str, key: str, body: bytes, content_type: str) -> None:
 
 
 _aws_s3_put = aws_s3_put
+
+
+JSONValue = None | bool | int | float | str | Sequence["JSONValue"] | Mapping[str, "JSONValue"]
+
+
+class ChangelogEntry(TypedDict):
+    """Fields read from changelog JSON; producers may omit any field."""
+
+    event_id: NotRequired[str]
+    ts_utc: NotRequired[str]
+    event_type: NotRequired[str]
+    severity: NotRequired[str]
+    subsystem: NotRequired[str]
+    root_cause_category: NotRequired[str]
+    resolution_type: NotRequired[str]
+    summary: NotRequired[str]
+    resolution_notes: NotRequired[str | None]
+    git_refs: NotRequired[list[str | dict[str, JSONValue]]]
 
 
 # -------------------- corpus loading ---------------------------------
