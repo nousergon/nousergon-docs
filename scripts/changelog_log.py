@@ -110,7 +110,7 @@ class Vocab:
             )
         text = path.read_text()
         try:
-            import yaml  # PyYAML — preferred when available
+            import yaml  # pyright: ignore[reportMissingModuleSource]  # PyYAML has no source stubs in this environment.
             data = yaml.safe_load(text)
         except ImportError:
             data = _parse_vocab_yaml_subset(text)
@@ -573,7 +573,7 @@ def main(argv: list[str] | None = None) -> int:
     body = payload.encode("utf-8")
     new_key, legacy_key = entry.s3_keys()
 
-    print(f"→ event_id: {entry._event_id()}")
+    print(f"→ event_id: {entry.to_dict()['event_id']}")
     print(f"→ NEW path: s3://{args.bucket}/{new_key}")
     if legacy_key and not args.no_legacy_mirror:
         print(f"→ legacy:   s3://{args.bucket}/{legacy_key}  (back-compat mirror)")
