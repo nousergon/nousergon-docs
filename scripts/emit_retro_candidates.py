@@ -53,19 +53,19 @@ import sys
 import tempfile
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
+from collections.abc import Callable, Mapping, Sequence
+from typing import NotRequired, TypedDict, cast
 
 # scripts/ is on sys.path[0] when invoked as `python3 scripts/emit_retro_candidates.py`,
 # so the sibling module imports resolve without packaging.
+import aggregate_periodic
+
 from aggregate_periodic import (
     DEFAULT_BUCKET,
     ENTRIES_PREFIX,
     RETRO_RESOLUTION_NOTES_MIN_CHARS,
     RETRO_SEVERITIES,
     SCHEMA_VERSION,
-    _aws_s3_put,
-    _aws_s3_sync,
-    _utc_today,
     extract_retro_candidates,
     load_entries_in_range,
 )
@@ -87,13 +87,58 @@ _PROJECT_FIELDS = (
     "git_refs",
 )
 
+JSONValue = None | bool | int | float | str | Sequence["JSONValue"] | Mapping[str, "JSONValue"]
+_aws_s3_put = cast(Callable[[str, str, bytes, str], None], getattr(aggregate_periodic, "_aws_s3_put"))
+_aws_s3_sync = cast(Callable[[str, str, Path], None], getattr(aggregate_periodic, "_aws_s3_sync"))
+_utc_today = cast(Callable[[], date], getattr(aggregate_periodic, "_utc_today"))
 
-def _normalize_git_refs(refs: Any) -> list[dict[str, Any]]:
+
+class ChangelogEntry(TypedDict):
+    """Fields read from changelog JSON; producers may omit any field."""
+
+    event_id: NotRequired[str]
+    ts_utc: NotRequired[str]
+    event_type: NotRequired[str]
+    severity: NotRequired[str]
+    subsystem: NotRequired[str]
+    root_cause_category: NotRequired[str]
+    resolution_type: NotRequired[str]
+    summary: NotRequired[str]
+    resolution_notes: NotRequired[str | None]
+    git_refs: NotRequired[list[JSONValue]]
+
+
+class IncidentGroup(TypedDict):
+    subsystem: str
+    severity: str
+    count: int
+    latest_ts: str
+    latest_event_id: str
+    summary: str
+    has_writeup: bool
+
+
+class Payload(TypedDict):
+    schema_version: str
+    generated_at: str
+    window_days: int
+    window_start: str
+    window_end: str
+    ready_for_retro_count: int
+    ready_for_retro: list[dict[str, JSONValue]]
+    incident_group_count: int
+    incident_total: int
+    incident_groups: list[IncidentGroup]
+
+
+def _normalize_git_refs(refs: JSONValue) -> list[dict[str, JSONValue]]:
     """Coerce git_refs to a list of dicts. Some legacy producers (e.g.
     prompt-version-autoemit) write bare SHA strings; the dashboard renderer
     expects dicts, so normalize here at the contract boundary."""
-    out: list[dict[str, Any]] = []
-    for r in refs or []:
+    out: list[dict[str, JSONValue]] = []
+    if not isinstance(refs, list):
+        return out
+    for r in refs:
         if isinstance(r, dict):
             out.append(r)
         elif isinstance(r, str):
@@ -101,7 +146,7 @@ def _normalize_git_refs(refs: Any) -> list[dict[str, Any]]:
     return out
 
 
-def project_candidate(e: dict[str, Any]) -> dict[str, Any]:
+def project_candidate(e: ChangelogEntry) -> dict[str, JSONValue]:
     """Project a raw entry to the stable console contract subset."""
     proj = {k: e.get(k) for k in _PROJECT_FIELDS}
     proj["git_refs"] = _normalize_git_refs(proj.get("git_refs"))
@@ -135,7 +180,7 @@ def _normalize_summary(summary: str) -> str:
     return " ".join(s.split())
 
 
-def group_incidents(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def group_incidents(entries: list[ChangelogEntry]) -> list[IncidentGroup]:
     """Group real high/critical incidents by (subsystem, normalized summary) so
     the console shows distinct recurring failures with a count instead of a flat
     list of hundreds of near-duplicate rows. Newest-first by latest occurrence.
@@ -144,44 +189,52 @@ def group_incidents(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
     incidents after the classifier fix (alpha-engine-data), so they don't
     appear here.
     """
-    groups: dict[tuple[str, str], dict[str, Any]] = {}
+    groups: dict[tuple[str, str], IncidentGroup] = {}
     for e in entries:
         if e.get("event_type") != "incident":
             continue
-        if e.get("severity") not in RETRO_SEVERITIES:
+        severity_value = e.get("severity")
+        if not isinstance(severity_value, str) or severity_value not in RETRO_SEVERITIES:
             continue
-        subsystem = e.get("subsystem") or "—"
-        key = (subsystem, _normalize_summary(e.get("summary", "")))
-        ts = e.get("ts_utc", "")
-        has_writeup = len(e.get("resolution_notes") or "") >= RETRO_RESOLUTION_NOTES_MIN_CHARS
+        subsystem_value = e.get("subsystem")
+        subsystem = subsystem_value if isinstance(subsystem_value, str) else "—"
+        summary_value = e.get("summary")
+        summary = summary_value if isinstance(summary_value, str) else ""
+        key = (subsystem, _normalize_summary(summary))
+        ts_value = e.get("ts_utc")
+        ts = ts_value if isinstance(ts_value, str) else ""
+        notes = e.get("resolution_notes")
+        has_writeup = isinstance(notes, str) and len(notes) >= RETRO_RESOLUTION_NOTES_MIN_CHARS
         g = groups.get(key)
         if g is None:
             groups[key] = {
                 "subsystem": subsystem,
-                "severity": e.get("severity"),
+                "severity": severity_value,
                 "count": 1,
                 "latest_ts": ts,
-                "latest_event_id": e.get("event_id"),
-                "summary": e.get("summary", ""),
+                "latest_event_id": e.get("event_id") or "",
+                "summary": summary,
                 "has_writeup": has_writeup,
             }
         else:
             g["count"] += 1
-            if _SEVERITY_RANK.get(e.get("severity"), 0) > _SEVERITY_RANK.get(g["severity"], 0):
-                g["severity"] = e.get("severity")
+            severity = severity_value
+            if _SEVERITY_RANK.get(severity, 0) > _SEVERITY_RANK.get(g["severity"], 0):
+                g["severity"] = severity
             g["has_writeup"] = g["has_writeup"] or has_writeup
             if ts > (g["latest_ts"] or ""):
                 g["latest_ts"] = ts
-                g["latest_event_id"] = e.get("event_id")
-                g["summary"] = e.get("summary", "")
+                g["latest_event_id"] = e.get("event_id") or ""
+                g["summary"] = summary
     return sorted(groups.values(), key=lambda g: g["latest_ts"] or "", reverse=True)
 
 
-def build_payload(entries: list[dict[str, Any]], window_days: int,
-                  window_start: date, window_end: date) -> dict[str, Any]:
+def build_payload(entries: list[ChangelogEntry], window_days: int,
+                  window_start: date, window_end: date) -> Payload:
     # "Ready for retro" — incidents an operator has already written up (full
     # editorial detail, incl. resolution_notes). Empty until annotation happens.
-    ready = [project_candidate(e) for e in extract_retro_candidates(entries)]
+    raw_candidates = extract_retro_candidates(cast(list[dict[str, object]], entries))
+    ready = [project_candidate(cast(ChangelogEntry, e)) for e in raw_candidates]
     # "Incidents to review" — all real high/critical incidents, grouped.
     incident_groups = group_incidents(entries)
     total_incidents = sum(g["count"] for g in incident_groups)
@@ -224,8 +277,8 @@ def main(argv: list[str] | None = None) -> int:
     window_end = _utc_today()
     window_start = window_end - timedelta(days=args.window_days)
 
-    def _emit(corpus_dir: Path) -> dict[str, Any]:
-        entries = load_entries_in_range(corpus_dir, window_start, window_end)
+    def _emit(corpus_dir: Path) -> Payload:
+        entries = cast(list[ChangelogEntry], load_entries_in_range(corpus_dir, window_start, window_end))
         return build_payload(entries, args.window_days, window_start, window_end)
 
     if args.corpus_dir:
