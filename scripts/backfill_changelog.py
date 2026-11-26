@@ -37,19 +37,68 @@ vocab fields that defaulted (subsystem / root_cause_category / etc.).
 from __future__ import annotations
 
 import argparse
-import dataclasses
 import hashlib
 import json
 import subprocess
 import sys
 from dataclasses import dataclass
-from datetime import datetime, timezone
-from typing import Any, Callable
+from typing import Callable, NotRequired, TypedDict, TypeAlias, cast
 
 SCHEMA_VERSION = "1.0.0"
 DEFAULT_BUCKET = "alpha-engine-research"
 LEGACY_PREFIXES = ["deploys", "incidents", "manual", "recoveries"]
 STRUCTURED_PREFIX = "changelog/entries"
+
+JsonValue: TypeAlias = str | int | float | bool | None | list["JsonValue"] | dict[str, "JsonValue"]
+JsonObject: TypeAlias = dict[str, JsonValue]
+
+
+class StructuredRecord(TypedDict):
+    schema_version: str
+    event_id: str
+    ts_utc: str
+    event_type: str
+    severity: str | None
+    subsystem: str | None
+    root_cause_category: str | None
+    resolution_type: str | None
+    started_at: str | None
+    detected_at: str | None
+    resolved_at: str | None
+    verified_at: str | None
+    summary: str
+    description: str | None
+    resolution_notes: str | None
+    actor: str
+    machine: str
+    source: str
+    auto_emitted: bool
+    backfilled: bool
+    git_refs: list[JsonObject]
+    prompt_version: str | None
+    run_id: str | None
+    eval_run_ref: str | None
+    deploy: NotRequired[JsonObject]
+    sns: NotRequired[JsonObject]
+
+
+def _json_value(value: object) -> JsonValue:
+    """Validate and type a value returned by the untyped JSON decoder."""
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, list):
+        items = cast(list[object], value)
+        return [_json_value(item) for item in items]
+    if isinstance(value, dict):
+        items = cast(dict[object, object], value)
+        if all(isinstance(key, str) for key in items):
+            return {key: _json_value(item) for key, item in items.items() if isinstance(key, str)}
+    raise ValueError("JSON value has an unsupported shape")
+
+
+def _get_str(record: JsonObject, key: str, default: str = "") -> str:
+    value = record.get(key)
+    return value if isinstance(value, str) else default
 
 # Repo → subsystem mapping. Mirrors the case-block in
 # .github/actions/append-changelog/action.yml. Keep aligned.
@@ -176,7 +225,7 @@ def _event_id(ts_utc: str, actor: str, summary: str, *, segment: str | None = No
     return f"{ts_id}_{middle_safe}_{h}"
 
 
-def _struct_base(ts_utc: str) -> dict[str, Any]:
+def _struct_base(ts_utc: str) -> StructuredRecord:
     """Skeleton with all schema-1.0.0 fields zeroed. Per-type transforms fill in."""
     return {
         "schema_version": SCHEMA_VERSION,
@@ -206,24 +255,26 @@ def _struct_base(ts_utc: str) -> dict[str, Any]:
     }
 
 
-def transform_deploy(legacy: dict[str, Any]) -> dict[str, Any]:
+def transform_deploy(legacy: JsonObject) -> StructuredRecord:
     """Legacy deploy entry → schema-1.0.0 change/incident entry.
 
     Mirrors the composite action's mapping (see action.yml). Failed deploys
     become event_type=incident with infrastructure_failure root cause; success
     + merged become event_type=change with code_fix resolution.
     """
-    ts_utc = legacy["ts_utc"]
-    repo_full = legacy.get("repo", "")
+    ts_utc = _get_str(legacy, "ts_utc")
+    repo_full = _get_str(legacy, "repo")
     repo_short = repo_full.split("/", 1)[-1] if "/" in repo_full else repo_full
     subsystem = REPO_SUBSYSTEM.get(repo_short, "infrastructure")
 
-    deploy_status = legacy.get("deploy_status", "success")
-    pr_title = legacy.get("pr_title", "")
-    pr_body = legacy.get("pr_body", "")
-    actor = legacy.get("author", "")
-    sha = legacy.get("sha", "")
+    deploy_status = _get_str(legacy, "deploy_status", "success")
+    pr_title = _get_str(legacy, "pr_title")
+    pr_body = _get_str(legacy, "pr_body")
+    actor = _get_str(legacy, "author")
+    sha = _get_str(legacy, "sha")
     pr_number = legacy.get("pr_number")
+    if not isinstance(pr_number, int):
+        pr_number = None
 
     if deploy_status == "failure":
         event_type = "incident"
@@ -255,7 +306,7 @@ def transform_deploy(legacy: dict[str, Any]) -> dict[str, Any]:
     out["machine"] = "github-actions"
     out["source"] = "ci-deploy"
 
-    git_ref: dict[str, Any] = {"repo": repo_full}
+    git_ref: JsonObject = {"repo": repo_full}
     if sha:
         git_ref["sha"] = sha
     if pr_number is not None:
@@ -265,16 +316,16 @@ def transform_deploy(legacy: dict[str, Any]) -> dict[str, Any]:
 
     out["deploy"] = {
         "status": deploy_status,
-        "workflow": legacy.get("deploy_workflow") or legacy.get("workflow_name", ""),
-        "workflow_run_id": legacy.get("workflow_run_id", ""),
-        "sha7": legacy.get("sha7", ""),
-        "pr_url": legacy.get("pr_url", ""),
+        "workflow": _get_str(legacy, "deploy_workflow") or _get_str(legacy, "workflow_name"),
+        "workflow_run_id": _get_str(legacy, "workflow_run_id"),
+        "sha7": _get_str(legacy, "sha7"),
+        "pr_url": _get_str(legacy, "pr_url"),
         "files_changed": legacy.get("files_changed", 0),
     }
     return out
 
 
-def transform_incident(legacy: dict[str, Any]) -> dict[str, Any]:
+def transform_incident(legacy: JsonObject) -> StructuredRecord:
     """Legacy SNS-mirrored incident → schema-1.0.0 incident entry.
 
     Defaults match the SNS-mirror Lambda's (severity=high, subsystem=
@@ -282,13 +333,13 @@ def transform_incident(legacy: dict[str, Any]) -> dict[str, Any]:
     can refine via a follow-up `changelog-log --event-type investigation`
     entry whose git_refs reference the original event_id.
     """
-    ts_utc = legacy["ts_utc"]
-    source = legacy.get("source", "sns")
-    summary = legacy.get("summary") or legacy.get("subject") or "(no subject)"
-    details = legacy.get("details", "")
-    sns_msg_id = legacy.get("sns_message_id", "")
-    topic_arn = legacy.get("topic_arn", "")
-    subject = legacy.get("subject", "")
+    ts_utc = _get_str(legacy, "ts_utc")
+    source = _get_str(legacy, "source", "sns")
+    summary = _get_str(legacy, "summary") or _get_str(legacy, "subject") or "(no subject)"
+    details = _get_str(legacy, "details")
+    sns_msg_id = _get_str(legacy, "sns_message_id")
+    topic_arn = _get_str(legacy, "topic_arn")
+    subject = _get_str(legacy, "subject")
 
     out = _struct_base(ts_utc)
     out["event_id"] = _event_id(ts_utc, source, summary)
@@ -310,7 +361,7 @@ def transform_incident(legacy: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
-def transform_manual(legacy: dict[str, Any]) -> dict[str, Any]:
+def transform_manual(legacy: JsonObject) -> StructuredRecord:
     """Legacy operator-typed manual annotation → schema-1.0.0 change entry.
 
     Manual entries lack structured fields; default to event_type=change +
@@ -318,10 +369,10 @@ def transform_manual(legacy: dict[str, Any]) -> dict[str, Any]:
     are the most likely candidates for operator refinement post-backfill
     since the original captured no semantic typing.
     """
-    ts_utc = legacy["ts_utc"]
-    actor = legacy.get("actor", "operator")
-    summary = legacy.get("summary", "(no summary)")
-    details = legacy.get("details", "")
+    ts_utc = _get_str(legacy, "ts_utc")
+    actor = _get_str(legacy, "actor", "operator")
+    summary = _get_str(legacy, "summary", "(no summary)")
+    details = _get_str(legacy, "details")
 
     out = _struct_base(ts_utc)
     out["event_id"] = _event_id(ts_utc, actor, summary)
@@ -334,18 +385,18 @@ def transform_manual(legacy: dict[str, Any]) -> dict[str, Any]:
     out["summary"] = summary[:240]
     out["description"] = details or None
     out["actor"] = actor
-    out["machine"] = legacy.get("machine", "")
+    out["machine"] = _get_str(legacy, "machine")
     out["source"] = "changelog-log-legacy"
     out["auto_emitted"] = False
     return out
 
 
-def transform_recovery(legacy: dict[str, Any]) -> dict[str, Any]:
+def transform_recovery(legacy: JsonObject) -> StructuredRecord:
     """Legacy operator-typed recovery → schema-1.0.0 recovery entry."""
-    ts_utc = legacy["ts_utc"]
-    actor = legacy.get("actor", "operator")
-    summary = legacy.get("summary", "(no summary)")
-    details = legacy.get("details", "")
+    ts_utc = _get_str(legacy, "ts_utc")
+    actor = _get_str(legacy, "actor", "operator")
+    summary = _get_str(legacy, "summary", "(no summary)")
+    details = _get_str(legacy, "details")
 
     out = _struct_base(ts_utc)
     out["event_id"] = _event_id(ts_utc, actor, summary)
@@ -356,13 +407,13 @@ def transform_recovery(legacy: dict[str, Any]) -> dict[str, Any]:
     out["summary"] = summary[:240]
     out["description"] = details or None
     out["actor"] = actor
-    out["machine"] = legacy.get("machine", "")
+    out["machine"] = _get_str(legacy, "machine")
     out["source"] = "changelog-log-legacy"
     out["auto_emitted"] = False
     return out
 
 
-TRANSFORMS: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
+TRANSFORMS: dict[str, Callable[[JsonObject], StructuredRecord]] = {
     "deploys": transform_deploy,
     "incidents": transform_incident,
     "manual": transform_manual,
@@ -370,7 +421,7 @@ TRANSFORMS: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
 }
 
 
-def _structured_key(entry: dict[str, Any]) -> str:
+def _structured_key(entry: StructuredRecord) -> str:
     date = entry["ts_utc"][:10]
     return f"{STRUCTURED_PREFIX}/{date}/{entry['event_id']}.json"
 
@@ -378,23 +429,28 @@ def _structured_key(entry: dict[str, Any]) -> str:
 def backfill_one(
     bucket: str,
     legacy_key: str,
-    transform: Callable[[dict[str, Any]], dict[str, Any]],
+    transform: Callable[[JsonObject], StructuredRecord],
     *,
     dry_run: bool = False,
     reprocess: bool = False,
-) -> tuple[str, dict[str, Any] | None, str]:
+) -> tuple[str, StructuredRecord | None, str]:
     """Returns (status, entry, structured_key).
 
     status ∈ {"written", "skipped_exists", "skipped_unrecognized", "error"}.
     """
     raw = _aws_s3_get(bucket, legacy_key)
     try:
-        legacy = json.loads(raw)
+        decoded = json.loads(raw)
     except json.JSONDecodeError as e:
         sys.stderr.write(f"ERROR: {legacy_key}: invalid JSON: {e}\n")
         return ("error", None, "")
 
-    if "ts_utc" not in legacy:
+    value = _json_value(decoded)
+    if not isinstance(value, dict):
+        sys.stderr.write(f"WARN: {legacy_key}: JSON is not an object; skipping\n")
+        return ("skipped_unrecognized", None, "")
+    legacy: JsonObject = value
+    if not isinstance(legacy.get("ts_utc"), str):
         sys.stderr.write(f"WARN: {legacy_key}: no ts_utc; skipping\n")
         return ("skipped_unrecognized", None, "")
 
@@ -466,7 +522,7 @@ def main(argv: list[str] | None = None) -> int:
             sub_stats.seen += 1
             grand_stats.seen += 1
             try:
-                status, entry, s_key = backfill_one(
+                status, _, s_key = backfill_one(
                     args.bucket,
                     key,
                     transform,
