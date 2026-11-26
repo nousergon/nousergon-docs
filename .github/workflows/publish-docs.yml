@@ -44,8 +44,13 @@ on:
     # morning.
     - cron: "0 6 * * 1"
 
+# A pull request gets its own group so concurrent PR builds are never dropped:
+# with one shared group GitHub keeps a single pending run and discards the
+# rest, so a PR could end up with no `build` result at all (seen 2026-11-26
+# on PRs 82-85, opened together). Main, schedule and dispatch runs keep the
+# one shared group, so Pages deploys still never overlap.
 concurrency:
-  group: publish-docs
+  group: ${{ github.event_name == 'pull_request' && format('publish-docs-pr-{0}', github.event.pull_request.number) || 'publish-docs' }}
   cancel-in-progress: false
 
 permissions:
