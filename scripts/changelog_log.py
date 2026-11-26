@@ -110,7 +110,7 @@ class Vocab:
             )
         text = path.read_text()
         try:
-            import yaml  # pyright: ignore[reportMissingModuleSource] — PyYAML source is unavailable to basedpyright.
+            import yaml  # PyYAML — preferred when available  # pyright: ignore[reportMissingModuleSource]  # PyYAML's installed package lacks importable source for this module.
             data = yaml.safe_load(text)
         except ImportError:
             data = _parse_vocab_yaml_subset(text)
@@ -254,12 +254,15 @@ class Entry:
         d["prompt_version"] = self.prompt_version
         return d
 
-    def _event_id(self) -> str:
+    def event_id(self) -> str:
         ts_key = self.ts_utc.replace(":", "-").replace("Z", "")
         digest_input = f"{self.ts_utc}|{self.actor}|{self.summary}".encode()
         h = hashlib.sha1(digest_input).hexdigest()[:7]
         actor_safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in self.actor)
         return f"{ts_key}_{actor_safe}_{h}"
+
+    def _event_id(self) -> str:
+        return self.event_id()
 
     def s3_keys(self) -> tuple[str, str]:
         ts = self.ts_utc[:10]
@@ -573,8 +576,7 @@ def main(argv: list[str] | None = None) -> int:
     body = payload.encode("utf-8")
     new_key, legacy_key = entry.s3_keys()
 
-    event_id = new_key.rsplit("/", 1)[-1].removesuffix(".json")
-    print(f"→ event_id: {event_id}")
+    print(f"→ event_id: {entry.event_id()}")
     print(f"→ NEW path: s3://{args.bucket}/{new_key}")
     if legacy_key and not args.no_legacy_mirror:
         print(f"→ legacy:   s3://{args.bucket}/{legacy_key}  (back-compat mirror)")

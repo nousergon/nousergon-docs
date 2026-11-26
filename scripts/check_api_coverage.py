@@ -49,7 +49,7 @@ class DeclarationError(Exception):
 def package_roots(src_dir: Path) -> list[Path]:
     text = (src_dir / "mkdocs.yml").read_text(encoding="utf-8")
     match = PATHS_RE.search(text)
-    if not match:
+    if match is None:
         raise DeclarationError(f"{src_dir}/mkdocs.yml declares no mkdocstrings `paths: [...]`")
     entries = [e.strip().strip("'\"") for e in match.group(1).split(",") if e.strip()]
     if not entries:
@@ -98,7 +98,7 @@ def uncovered(src_dir: Path) -> list[str]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else "")
+    parser = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
     parser.add_argument("src_dir", type=Path, help="api-src/<repo> directory, with its checkout present")
     parser.add_argument("--enforce", action="store_true", help="exit 1 when a package is uncovered")
     args = parser.parse_args(argv)
