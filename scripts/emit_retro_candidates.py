@@ -60,6 +60,7 @@ from typing import Any
 from aggregate_periodic import (
     DEFAULT_BUCKET,
     ENTRIES_PREFIX,
+    ChangelogEntry,
     RETRO_RESOLUTION_NOTES_MIN_CHARS,
     RETRO_SEVERITIES,
     SCHEMA_VERSION,
@@ -101,7 +102,7 @@ def _normalize_git_refs(refs: Any) -> list[dict[str, Any]]:
     return out
 
 
-def project_candidate(e: dict[str, Any]) -> dict[str, Any]:
+def project_candidate(e: ChangelogEntry) -> dict[str, Any]:
     """Project a raw entry to the stable console contract subset."""
     proj = {k: e.get(k) for k in _PROJECT_FIELDS}
     proj["git_refs"] = _normalize_git_refs(proj.get("git_refs"))
@@ -135,7 +136,7 @@ def _normalize_summary(summary: str) -> str:
     return " ".join(s.split())
 
 
-def group_incidents(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def group_incidents(entries: list[ChangelogEntry]) -> list[dict[str, Any]]:
     """Group real high/critical incidents by (subsystem, normalized summary) so
     the console shows distinct recurring failures with a count instead of a flat
     list of hundreds of near-duplicate rows. Newest-first by latest occurrence.
@@ -177,7 +178,7 @@ def group_incidents(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return sorted(groups.values(), key=lambda g: g["latest_ts"] or "", reverse=True)
 
 
-def build_payload(entries: list[dict[str, Any]], window_days: int,
+def build_payload(entries: list[ChangelogEntry], window_days: int,
                   window_start: date, window_end: date) -> dict[str, Any]:
     # "Ready for retro" — incidents an operator has already written up (full
     # editorial detail, incl. resolution_notes). Empty until annotation happens.

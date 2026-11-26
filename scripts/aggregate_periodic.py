@@ -46,14 +46,13 @@ from __future__ import annotations
 import argparse
 import json
 import math
-import os
 import statistics
 import subprocess
 import sys
 import tempfile
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
+from typing import Literal, Mapping, Sequence, TypeGuard, TypedDict, TypeVar, cast
 
 SCHEMA_VERSION = "1.0.0"
 DEFAULT_BUCKET = "alpha-engine-research"
@@ -75,6 +74,109 @@ SEVERITY_EMOJI = {
     "low": "⚪",
     "informational": "⚪",
 }
+
+
+class ChangelogEntry(TypedDict, total=False):
+    event_type: str
+    subsystem: str
+    severity: str
+    root_cause_category: str
+    resolution_type: str
+    ts_utc: str
+    started_at: str
+    detected_at: str
+    resolved_at: str
+    auto_emitted: bool
+    event_id: str
+    summary: str
+    resolution_notes: str
+    git_refs: list[str]
+    description: str
+
+
+class OpenIssue(TypedDict):
+    event_id: str
+    summary: str
+    age_days: float
+
+
+class StaleDefault(TypedDict):
+    event_id: str
+    summary: str
+    subsystem: str | None
+    age_days: float
+
+
+class RetroSummary(TypedDict):
+    event_id: str
+    ts_utc: str
+    summary: str
+    severity: str | None
+    subsystem: str | None
+    root_cause_category: str | None
+
+
+class IncidentMetrics(TypedDict):
+    count: int
+    with_root_cause_pct: float | None
+    mttd_seconds_mean: float | None
+    mttd_seconds_p50: float | None
+    mttd_seconds_p95: float | None
+    mttr_seconds_mean: float | None
+    mttr_seconds_p50: float | None
+    mttr_seconds_p95: float | None
+
+
+class Delta(TypedDict):
+    prior_period_id: str | None
+    entry_count_delta: int
+    incident_count_delta: int
+    mttr_seconds_mean_delta: float | None
+
+
+class Rollup(TypedDict):
+    schema_version: str
+    period_type: str
+    period_id: str
+    period_start: str
+    period_end: str
+    generated_at: str
+    entry_count: int
+    by_event_type: dict[str, int]
+    by_subsystem: dict[str, int]
+    by_severity: dict[str, int]
+    by_root_cause_category: dict[str, int]
+    by_resolution_type: dict[str, int]
+    incidents: IncidentMetrics
+    open_issues: list[OpenIssue]
+    stale_default_triage: list[StaleDefault]
+    retro_candidates: list[RetroSummary]
+    deltas_vs_prior: Delta | None
+
+
+class Counts(TypedDict):
+    by_event_type: dict[str, int]
+    by_subsystem: dict[str, int]
+    by_severity: dict[str, int]
+    by_root_cause_category: dict[str, int]
+    by_resolution_type: dict[str, int]
+
+
+EntryT = TypeVar("EntryT", bound=Mapping[str, object])
+
+
+def _is_string_keyed_dict(value: object) -> TypeGuard[dict[str, object]]:
+    if not isinstance(value, dict):
+        return False
+    raw = cast(dict[object, object], value)
+    return all(isinstance(key, str) for key in raw)
+
+
+def _is_string_list(value: object) -> TypeGuard[list[str]]:
+    if not isinstance(value, list):
+        return False
+    raw = cast(list[object], value)
+    return all(isinstance(item, str) for item in raw)
 
 
 # -------------------- period helpers --------------------------------
@@ -175,15 +277,34 @@ def load_entries_in_range(
     corpus_dir: Path,
     start: date,
     end: date,
-) -> list[dict[str, Any]]:
+) -> list[ChangelogEntry]:
     """Load all structured entries with ts_utc dates in [start, end]."""
-    out: list[dict[str, Any]] = []
+    out: list[ChangelogEntry] = []
     for path in sorted(corpus_dir.glob("**/*.json")):
         try:
             with path.open() as f:
-                e = json.load(f)
+                value: object = json.load(f)
         except (OSError, json.JSONDecodeError):
             continue
+        if not _is_string_keyed_dict(value):
+            continue
+        entry_values: dict[str, str] = {}
+        for key in (
+            "event_type", "subsystem", "severity", "root_cause_category",
+            "resolution_type", "ts_utc", "started_at", "detected_at",
+            "resolved_at", "event_id", "summary", "resolution_notes",
+            "description",
+        ):
+            field_value = value.get(key)
+            if isinstance(field_value, str):
+                entry_values[key] = field_value
+        e = cast(ChangelogEntry, entry_values)
+        auto_emitted = value.get("auto_emitted")
+        if isinstance(auto_emitted, bool):
+            e["auto_emitted"] = auto_emitted
+        git_refs = value.get("git_refs")
+        if _is_string_list(git_refs):
+            e["git_refs"] = git_refs
         ts = e.get("ts_utc", "")
         if not ts:
             continue
@@ -223,14 +344,14 @@ def _percentile(values: list[float], pct: float) -> float | None:
 
 
 def compute_rollup(
-    entries: list[dict[str, Any]],
+    entries: list[ChangelogEntry],
     *,
     period_type: str,
     period_id: str,
     period_start: date,
     period_end: date,
-) -> dict[str, Any]:
-    counts: dict[str, dict[str, int]] = {
+) -> Rollup:
+    counts: Counts = {
         "by_event_type": {},
         "by_subsystem": {},
         "by_severity": {},
@@ -244,16 +365,23 @@ def compute_rollup(
     with_root_cause = 0
 
     for e in entries:
-        for field, bucket in [
+        counters: list[tuple[Literal[
+            "event_type", "subsystem", "severity", "root_cause_category", "resolution_type",
+        ], Literal[
+            "by_event_type", "by_subsystem", "by_severity",
+            "by_root_cause_category", "by_resolution_type",
+        ]]] = [
             ("event_type", "by_event_type"),
             ("subsystem", "by_subsystem"),
             ("severity", "by_severity"),
             ("root_cause_category", "by_root_cause_category"),
             ("resolution_type", "by_resolution_type"),
-        ]:
+        ]
+        for field, bucket in counters:
             v = e.get(field)
-            if v:
-                counts[bucket][v] = counts[bucket].get(v, 0) + 1
+            if isinstance(v, str) and v:
+                counter = counts[bucket]
+                counter[v] = counter.get(v, 0) + 1
 
     for inc in incidents:
         if inc.get("root_cause_category"):
@@ -266,20 +394,18 @@ def compute_rollup(
         if detected and resolved and resolved >= detected:
             mttr_secs.append((resolved - detected).total_seconds())
 
-    open_issues: list[dict[str, Any]] = []
+    open_issues: list[OpenIssue] = []
     now = datetime.now(timezone.utc)
     for e in entries:
         started = _parse_iso_utc(e.get("started_at"))
         resolved = _parse_iso_utc(e.get("resolved_at"))
         if started and not resolved:
             age = (now - started).total_seconds() / 86400.0
-            open_issues.append(
-                {
-                    "event_id": e.get("event_id", ""),
-                    "summary": (e.get("summary") or "")[:160],
-                    "age_days": round(age, 2),
-                }
-            )
+            open_issues.append({
+                "event_id": e.get("event_id", ""),
+                "summary": (e.get("summary") or "")[:160],
+                "age_days": round(age, 2),
+            })
     open_issues.sort(key=lambda x: x["age_days"], reverse=True)
     open_issues = open_issues[:10]
 
@@ -289,7 +415,7 @@ def compute_rollup(
     # Flag entries still carrying that default past a 7-day grace period so the
     # rollup nudges operator triage. Age is from ts_utc (auto-emitted entries
     # leave started_at null, so the open_issues pass above never sees them).
-    stale_default_triage: list[dict[str, Any]] = []
+    stale_default_triage: list[StaleDefault] = []
     for e in entries:
         if not e.get("auto_emitted"):
             continue
@@ -301,17 +427,15 @@ def compute_rollup(
         age = (now - ts).total_seconds() / 86400.0
         if age <= STALE_DEFAULT_GRACE_DAYS:
             continue
-        stale_default_triage.append(
-            {
-                "event_id": e.get("event_id", ""),
-                "summary": (e.get("summary") or "")[:160],
-                "subsystem": e.get("subsystem"),
-                "age_days": round(age, 2),
-            }
-        )
+        stale_default_triage.append({
+            "event_id": e.get("event_id", ""),
+            "summary": (e.get("summary") or "")[:160],
+            "subsystem": e.get("subsystem"),
+            "age_days": round(age, 2),
+        })
     stale_default_triage.sort(key=lambda x: x["age_days"], reverse=True)
 
-    retro_candidates_summary = [
+    retro_candidates_summary: list[RetroSummary] = [
         {
             "event_id": c.get("event_id", ""),
             "ts_utc": c.get("ts_utc", ""),
@@ -349,10 +473,11 @@ def compute_rollup(
         "open_issues": open_issues,
         "stale_default_triage": stale_default_triage,
         "retro_candidates": retro_candidates_summary,
+        "deltas_vs_prior": None,
     }
 
 
-def add_deltas(rollup: dict[str, Any], prior: dict[str, Any] | None) -> dict[str, Any]:
+def add_deltas(rollup: Rollup, prior: Rollup | None) -> Rollup:
     if prior is None:
         rollup["deltas_vs_prior"] = None
         return rollup
@@ -377,7 +502,7 @@ def _safe_delta(a: float | None, b: float | None) -> float | None:
 
 # -------------------- retro candidate mining -------------------------
 
-def extract_retro_candidates(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def extract_retro_candidates(entries: Sequence[EntryT]) -> list[EntryT]:
     """Filter entries to incidents that qualify for editorial retro/blog polish.
 
     ROADMAP > Observability > "Retro candidates section in periodic aggregator":
@@ -387,25 +512,29 @@ def extract_retro_candidates(entries: list[dict[str, Any]]) -> list[dict[str, An
     auto-emitted SNS-mirror entries (which lack `resolution_notes`).
     Sorted newest-first by `ts_utc` so the most recent candidates surface first.
     """
-    out: list[dict[str, Any]] = []
+    out: list[EntryT] = []
     for e in entries:
         if e.get("event_type") != "incident":
             continue
         if e.get("severity") not in RETRO_SEVERITIES:
             continue
-        if not (e.get("root_cause_category") or "").strip():
+        root_cause = e.get("root_cause_category")
+        if not isinstance(root_cause, str) or not root_cause.strip():
             continue
-        notes = e.get("resolution_notes") or ""
+        notes = e.get("resolution_notes")
+        if not isinstance(notes, str):
+            notes = ""
         if len(notes) < RETRO_RESOLUTION_NOTES_MIN_CHARS:
             continue
         out.append(e)
-    out.sort(key=lambda e: e.get("ts_utc", ""), reverse=True)
+    out.sort(key=lambda e: str(e.get("ts_utc", "")), reverse=True)
     return out
 
 
-def render_retro_candidate_oneliner(e: dict[str, Any]) -> str:
+def render_retro_candidate_oneliner(e: ChangelogEntry | RetroSummary) -> str:
     """One-line summary used inside the rollup markdown's `## Retro candidates`."""
-    emoji = SEVERITY_EMOJI.get(e.get("severity", ""), "⚪")
+    severity = e.get("severity") or ""
+    emoji = SEVERITY_EMOJI.get(severity, "⚪")
     subsystem = e.get("subsystem", "?")
     rcc = e.get("root_cause_category", "uncategorized")
     summary = (e.get("summary") or "")[:140]
@@ -420,7 +549,7 @@ def render_retro_candidate_oneliner(e: dict[str, Any]) -> str:
     )
 
 
-def render_retro_candidate_stub(e: dict[str, Any], period_id: str) -> str:
+def render_retro_candidate_stub(e: ChangelogEntry, period_id: str) -> str:
     """Editorial scaffold stub. Operator fills in the narrative section.
 
     Discipline (per `feedback_retros_scaffold_auto_narrative_manual`):
@@ -477,7 +606,7 @@ def render_retro_candidate_stub(e: dict[str, Any], period_id: str) -> str:
 
 
 def write_retro_candidate_stubs(
-    candidates: list[dict[str, Any]],
+    candidates: list[ChangelogEntry],
     period_id: str,
     scaffold_dir: Path,
 ) -> list[Path]:
@@ -504,7 +633,7 @@ def write_retro_candidate_stubs(
 
 # -------------------- markdown render --------------------------------
 
-def render_markdown(rollup: dict[str, Any]) -> str:
+def render_markdown(rollup: Rollup) -> str:
     p = rollup
     lines: list[str] = []
     lines.append(
@@ -520,8 +649,8 @@ def render_markdown(rollup: dict[str, Any]) -> str:
     )
     lines.append("")
 
-    if p.get("deltas_vs_prior"):
-        d = p["deltas_vs_prior"]
+    d = p.get("deltas_vs_prior")
+    if d is not None:
         delta_line = (
             f"vs `{d['prior_period_id']}`: entries {_signed(d['entry_count_delta'])}"
             f", incidents {_signed(d['incident_count_delta'])}"
@@ -531,8 +660,7 @@ def render_markdown(rollup: dict[str, Any]) -> str:
         lines.append(f"**Trend:** {delta_line}")
         lines.append("")
 
-    def render_counter(title: str, key: str) -> None:
-        c = p[key]
+    def render_counter(title: str, c: dict[str, int]) -> None:
         if not c:
             return
         lines.append(f"## {title}")
@@ -541,11 +669,11 @@ def render_markdown(rollup: dict[str, Any]) -> str:
             lines.append(f"- `{k}`: **{n}**")
         lines.append("")
 
-    render_counter("By event type", "by_event_type")
-    render_counter("By subsystem", "by_subsystem")
-    render_counter("By severity (incidents)", "by_severity")
-    render_counter("By root cause category", "by_root_cause_category")
-    render_counter("By resolution type", "by_resolution_type")
+    render_counter("By event type", p["by_event_type"])
+    render_counter("By subsystem", p["by_subsystem"])
+    render_counter("By severity (incidents)", p["by_severity"])
+    render_counter("By root cause category", p["by_root_cause_category"])
+    render_counter("By resolution type", p["by_resolution_type"])
 
     inc = p["incidents"]
     if inc["count"]:
