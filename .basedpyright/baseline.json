@@ -217,26 +217,6 @@
                     "lineCount": 1
                 }
             }
-        ],
-        "./scripts/changelog_log.py": [
-            {
-                "code": "reportPrivateUsage",
-                "range": {
-                    "startColumn": 31,
-                    "endColumn": 40,
-                    "lineCount": 1
-                }
-            }
-        ],
-        "./scripts/check_api_coverage.py": [
-            {
-                "code": "reportOptionalMemberAccess",
-                "range": {
-                    "startColumn": 57,
-                    "endColumn": 67,
-                    "lineCount": 1
-                }
-            }
         ]
     }
 }
