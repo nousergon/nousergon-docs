@@ -46,14 +46,16 @@ from __future__ import annotations
 import argparse
 import json
 import math
-import os
 import statistics
 import subprocess
 import sys
 import tempfile
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
+from collections.abc import Mapping, Sequence
+from typing import Any, NotRequired, TypedDict
+
+JSONValue = None | bool | int | float | str | Sequence["JSONValue"] | Mapping[str, "JSONValue"]
 
 SCHEMA_VERSION = "1.0.0"
 DEFAULT_BUCKET = "alpha-engine-research"
@@ -62,6 +64,21 @@ AGGREGATES_PREFIX = "changelog/aggregates"
 
 RETRO_RESOLUTION_NOTES_MIN_CHARS = 200
 RETRO_SEVERITIES = ("high", "critical")
+
+
+class ChangelogEntry(TypedDict):
+    """Fields read from changelog JSON; producers may omit any field."""
+
+    event_id: NotRequired[str]
+    ts_utc: NotRequired[str]
+    event_type: NotRequired[str]
+    severity: NotRequired[str]
+    subsystem: NotRequired[str]
+    root_cause_category: NotRequired[str]
+    resolution_type: NotRequired[str]
+    summary: NotRequired[str]
+    resolution_notes: NotRequired[str | None]
+    git_refs: NotRequired[list[str | dict[str, JSONValue]]]
 
 # Stale auto-emitted default triage (config#866). Auto-emit Lambdas default
 # this root_cause_category; entries still carrying it past the grace period
@@ -79,8 +96,11 @@ SEVERITY_EMOJI = {
 
 # -------------------- period helpers --------------------------------
 
-def _utc_today() -> date:
+def utc_today() -> date:
     return datetime.now(timezone.utc).date()
+
+
+_utc_today = utc_today
 
 
 def weekly_period(reference: date) -> tuple[date, date, str]:
@@ -144,7 +164,7 @@ def prior_period(period_type: str, start: date) -> tuple[date, date, str]:
 
 # -------------------- S3 helpers (subprocess, no boto3) --------------
 
-def _aws_s3_sync(bucket: str, prefix: str, dest: Path) -> None:
+def aws_s3_sync(bucket: str, prefix: str, dest: Path) -> None:
     """Sync entries under `bucket/prefix` to local `dest`."""
     proc = subprocess.run(
         ["aws", "s3", "sync", f"s3://{bucket}/{prefix}", str(dest), "--quiet"],
@@ -157,7 +177,10 @@ def _aws_s3_sync(bucket: str, prefix: str, dest: Path) -> None:
         raise SystemExit(f"ERROR: aws s3 sync failed (exit {proc.returncode})")
 
 
-def _aws_s3_put(bucket: str, key: str, body: bytes, content_type: str) -> None:
+_aws_s3_sync = aws_s3_sync
+
+
+def aws_s3_put(bucket: str, key: str, body: bytes, content_type: str) -> None:
     proc = subprocess.run(
         ["aws", "s3", "cp", "-", f"s3://{bucket}/{key}", "--content-type", content_type],
         input=body,
@@ -167,6 +190,9 @@ def _aws_s3_put(bucket: str, key: str, body: bytes, content_type: str) -> None:
     if proc.returncode != 0:
         sys.stderr.write(proc.stderr.decode("utf-8", errors="replace"))
         raise SystemExit(f"ERROR: aws s3 cp (write) failed for {key}")
+
+
+_aws_s3_put = aws_s3_put
 
 
 # -------------------- corpus loading ---------------------------------

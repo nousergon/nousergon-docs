@@ -53,21 +53,23 @@ import sys
 import tempfile
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
-from collections.abc import Callable, Mapping, Sequence
-from typing import NotRequired, TypedDict, cast
+from typing import TypedDict, cast
 
 # scripts/ is on sys.path[0] when invoked as `python3 scripts/emit_retro_candidates.py`,
 # so the sibling module imports resolve without packaging.
-import aggregate_periodic
-
 from aggregate_periodic import (
+    ChangelogEntry,
     DEFAULT_BUCKET,
     ENTRIES_PREFIX,
+    JSONValue,
     RETRO_RESOLUTION_NOTES_MIN_CHARS,
     RETRO_SEVERITIES,
     SCHEMA_VERSION,
+    aws_s3_put,
+    aws_s3_sync,
     extract_retro_candidates,
     load_entries_in_range,
+    utc_today,
 )
 
 DEFAULT_OUT_KEY = "changelog/retro_candidates.json"
@@ -87,25 +89,9 @@ _PROJECT_FIELDS = (
     "git_refs",
 )
 
-JSONValue = None | bool | int | float | str | Sequence["JSONValue"] | Mapping[str, "JSONValue"]
-_aws_s3_put = cast(Callable[[str, str, bytes, str], None], getattr(aggregate_periodic, "_aws_s3_put"))
-_aws_s3_sync = cast(Callable[[str, str, Path], None], getattr(aggregate_periodic, "_aws_s3_sync"))
-_utc_today = cast(Callable[[], date], getattr(aggregate_periodic, "_utc_today"))
-
-
-class ChangelogEntry(TypedDict):
-    """Fields read from changelog JSON; producers may omit any field."""
-
-    event_id: NotRequired[str]
-    ts_utc: NotRequired[str]
-    event_type: NotRequired[str]
-    severity: NotRequired[str]
-    subsystem: NotRequired[str]
-    root_cause_category: NotRequired[str]
-    resolution_type: NotRequired[str]
-    summary: NotRequired[str]
-    resolution_notes: NotRequired[str | None]
-    git_refs: NotRequired[list[JSONValue]]
+_aws_s3_put = aws_s3_put
+_aws_s3_sync = aws_s3_sync
+_utc_today = utc_today
 
 
 class IncidentGroup(TypedDict):
@@ -113,7 +99,7 @@ class IncidentGroup(TypedDict):
     severity: str
     count: int
     latest_ts: str
-    latest_event_id: str
+    latest_event_id: str | None
     summary: str
     has_writeup: bool
 
@@ -197,7 +183,7 @@ def group_incidents(entries: list[ChangelogEntry]) -> list[IncidentGroup]:
         if not isinstance(severity_value, str) or severity_value not in RETRO_SEVERITIES:
             continue
         subsystem_value = e.get("subsystem")
-        subsystem = subsystem_value if isinstance(subsystem_value, str) else "—"
+        subsystem = (subsystem_value if isinstance(subsystem_value, str) else "—") or "—"
         summary_value = e.get("summary")
         summary = summary_value if isinstance(summary_value, str) else ""
         key = (subsystem, _normalize_summary(summary))
@@ -212,7 +198,7 @@ def group_incidents(entries: list[ChangelogEntry]) -> list[IncidentGroup]:
                 "severity": severity_value,
                 "count": 1,
                 "latest_ts": ts,
-                "latest_event_id": e.get("event_id") or "",
+                "latest_event_id": e.get("event_id"),
                 "summary": summary,
                 "has_writeup": has_writeup,
             }
@@ -224,7 +210,7 @@ def group_incidents(entries: list[ChangelogEntry]) -> list[IncidentGroup]:
             g["has_writeup"] = g["has_writeup"] or has_writeup
             if ts > (g["latest_ts"] or ""):
                 g["latest_ts"] = ts
-                g["latest_event_id"] = e.get("event_id") or ""
+                g["latest_event_id"] = e.get("event_id")
                 g["summary"] = summary
     return sorted(groups.values(), key=lambda g: g["latest_ts"] or "", reverse=True)
 
