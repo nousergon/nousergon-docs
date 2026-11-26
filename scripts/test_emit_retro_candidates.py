@@ -13,6 +13,7 @@ from __future__ import annotations
 import sys
 from datetime import date
 from pathlib import Path
+import pytest
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
@@ -20,7 +21,7 @@ sys.path.insert(0, str(HERE))
 import emit_retro_candidates as erc  # noqa: E402
 
 
-def _entry(**fields):
+def _entry(**fields: object) -> erc.ChangelogEntry:
     base = {
         "schema_version": "1.0.0",
         "event_id": "e",
@@ -38,13 +39,13 @@ def _entry(**fields):
 
 # ---- normalization ---------------------------------------------------------
 
-def test_normalize_collapses_volatile_noise():
+def test_normalize_collapses_volatile_noise() -> None:
     a = erc._normalize_summary('ALARM: "my-alarm" in US East (N. Virginia) 12345')
     b = erc._normalize_summary('ALARM: "my-alarm" in US East (N. Virginia) 99999')
     assert a == b  # digits + region stripped -> same key
 
 
-def test_normalize_keeps_distinct_alarm_names():
+def test_normalize_keeps_distinct_alarm_names() -> None:
     a = erc._normalize_summary('ALARM: "alpha-engine-saturday-sf-failed"')
     b = erc._normalize_summary('ALARM: "alpha-engine-research-runner-timeout"')
     assert a != b  # the alarm name is identity and must be preserved
@@ -52,7 +53,7 @@ def test_normalize_keeps_distinct_alarm_names():
 
 # ---- grouping --------------------------------------------------------------
 
-def test_group_counts_repeats():
+def test_group_counts_repeats() -> None:
     entries = [
         _entry(ts_utc="2026-06-01T00:00:00Z", summary="Saturday Pipeline — FAILED"),
         _entry(ts_utc="2026-06-02T00:00:00Z", summary="Saturday Pipeline — FAILED"),
@@ -64,7 +65,7 @@ def test_group_counts_repeats():
     assert groups[0]["latest_ts"] == "2026-06-03T00:00:00Z"
 
 
-def test_group_excludes_non_incidents():
+def test_group_excludes_non_incidents() -> None:
     entries = [
         _entry(event_type="change", severity="informational", summary="Pipeline SUCCESS"),
         _entry(event_type="recovery", severity="informational", summary="OK cleared"),
@@ -75,7 +76,7 @@ def test_group_excludes_non_incidents():
     assert groups[0]["summary"] == "real failure"
 
 
-def test_group_excludes_medium_severity():
+def test_group_excludes_medium_severity() -> None:
     entries = [
         _entry(severity="medium", summary="a warning"),
         _entry(severity="high", summary="a failure"),
@@ -86,7 +87,7 @@ def test_group_excludes_medium_severity():
     assert summaries == {"a failure", "a crit"}
 
 
-def test_group_takes_worst_severity_and_writeup_flag():
+def test_group_takes_worst_severity_and_writeup_flag() -> None:
     long_notes = "x" * erc.RETRO_RESOLUTION_NOTES_MIN_CHARS
     entries = [
         _entry(severity="high", summary="flapping thing", ts_utc="2026-06-01T00:00:00Z"),
@@ -101,7 +102,7 @@ def test_group_takes_worst_severity_and_writeup_flag():
 
 # ---- payload ---------------------------------------------------------------
 
-def test_build_payload_shape():
+def test_build_payload_shape() -> None:
     entries = [_entry(summary="boom")]
     p = erc.build_payload(entries, 90, date(2026, 3, 9), date(2026, 6, 7))
     assert p["window_days"] == 90
@@ -110,25 +111,25 @@ def test_build_payload_shape():
     assert p["ready_for_retro_count"] == 0  # no resolution_notes
 
 
-def test_normalize_git_refs_handles_string_and_dict():
+def test_normalize_git_refs_handles_string_and_dict() -> None:
     # bare SHA strings (prompt-version-autoemit) -> {sha}; dicts preserved
     out = erc._normalize_git_refs(["1a6ac95", {"repo": "nousergon/x", "pr_number": 5}, 42])
     assert out == [{"sha": "1a6ac95"}, {"repo": "nousergon/x", "pr_number": 5}]
 
 
-def test_project_candidate_normalizes_git_refs():
+def test_project_candidate_normalizes_git_refs() -> None:
     c = erc.project_candidate(_entry(git_refs=["deadbee"]))
     assert c["git_refs"] == [{"sha": "deadbee"}]
 
 
-def test_ready_for_retro_requires_resolution_notes():
+def test_ready_for_retro_requires_resolution_notes() -> None:
     long_notes = "x" * erc.RETRO_RESOLUTION_NOTES_MIN_CHARS
     entries = [_entry(summary="written up", resolution_notes=long_notes)]
     p = erc.build_payload(entries, 90, date(2026, 3, 9), date(2026, 6, 7))
     assert p["ready_for_retro_count"] == 1
 
 
-def test_main_write_path_does_not_crash(tmp_path, monkeypatch):
+def test_main_write_path_does_not_crash(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Exercises the real (non-dry-run) S3 write + success-print path — the
     dry-run tests skip it, which is how a stale payload key reached prod."""
     import json as _json
@@ -141,3 +142,18 @@ def test_main_write_path_does_not_crash(tmp_path, monkeypatch):
     rc = erc.main(["--corpus-dir", str(tmp_path), "--window-days", "3650"])
     assert rc == 0
     assert written.get("key") == erc.DEFAULT_OUT_KEY
+
+
+def test_group_preserves_missing_event_id_and_empty_subsystem() -> None:
+    entry = _entry(subsystem="")
+    del entry["event_id"]
+    groups = erc.group_incidents([entry])
+    assert groups == [{
+        "subsystem": "—",
+        "severity": "high",
+        "count": 1,
+        "latest_ts": "2026-06-01T00:00:00Z",
+        "latest_event_id": None,
+        "summary": "Something failed",
+        "has_writeup": False,
+    }]
